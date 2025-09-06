@@ -1,14 +1,11 @@
-"use client";
-import { useEffect, useState } from "react";
+import { LoginForm } from "@/components/login-form"
 
-export default function Home() {
-  const [msg, setMsg] = useState("");
-
-  useEffect(() => {
-    fetch("/api/")
-      .then(res => res.json())
-      .then(data => setMsg(data.msg));
-  }, []);
-
-  return <h1>{msg}</h1>;
+export default function HomePage() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <LoginForm />
+      </div>
+    </div>
+  )
 }
