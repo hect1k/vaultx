@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: vaultx
+      POSTGRES_PASSWORD: vaultxpass
+      POSTGRES_DB: vaultx
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - vaultx-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_USER: vaultx
+      DB_PASSWORD: vaultxpass
+      DB_NAME: vaultx
+      DB_PORT: 5432
+    ports:
+      - "8080:8080"
+    networks:
+      - vaultx-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://backend:8080
+    ports:
+      - "3000:3000"
+    networks:
+      - vaultx-network
+
+volumes:
+  db-data:
+
+networks:
+  vaultx-network:
+    driver: bridge
