@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.database import get_db
 from app.models.models import SuccessResponse, User
-from app.services import auth_service
+from app.services import auth_service, email_service
 from app.utils.crypto import encrypt_email, hash_email, hmac_compare
 from app.utils.logging import log_action_async
 
@@ -36,17 +36,16 @@ async def request_token(email: str = Query(...), db: Session = Depends(get_db)):
 
     await log_action_async(db, email, "AUTH", "Requested Magic Token")
 
-    if settings.APP_ENV != "prod":
+    try:
+        await email_service.send_magic_link(email, magic)
         return {
-            "detail": "Magic token generated (DEV mode)",
-            "data": {"magic_token": magic, "email": email},
+            "detail": "Magic token sent via email!",
+            "data": {"email": email},
         }
 
-    # TODO: add email sending
-    return {
-        "detail": "Magic token generated (DEV mode)",
-        "data": {"magic_token": magic, "email": email},
-    }
+    except Exception as e:
+        print("ERROR SENDING MAGIC LINK: ", e)
+        raise HTTPException(status_code=500, detail="Failed to send magic link")
 
 
 @router.post("/consume", response_model=dict)
