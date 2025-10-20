@@ -19,7 +19,7 @@ def get_current_user(
 ) -> User:
     token = creds.credentials
     try:
-        payload = auth_service.decode_jwt_token(token)
+        payload = auth_service.decode_jwt(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"

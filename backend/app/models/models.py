@@ -1,8 +1,8 @@
 import datetime
-import hashlib
 import uuid
 from typing import List, Optional
 
+from pydantic import BaseModel
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,7 +17,10 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=generate_uuid)
-    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    email_hash: Mapped[str] = mapped_column(
+        String, unique=True, nullable=False, index=True
+    )
+    email_enc: Mapped[str] = mapped_column(String, nullable=False)
     hashed_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     token_created_at: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -48,10 +51,10 @@ class File(Base):
 
     owner: Mapped["User"] = relationship("User", back_populates="files")
     keywords: Mapped[List["FileKeyword"]] = relationship(
-        "FileKeyword", back_populates="file", cascade="all, delete"
+        "FileKeyword", back_populates="file", cascade="all, delete-orphan"
     )
     shares: Mapped[List["FileShare"]] = relationship(
-        "FileShare", back_populates="file", cascade="all, delete"
+        "FileShare", back_populates="file", cascade="all, delete-orphan"
     )
 
 
@@ -85,15 +88,10 @@ class Log(Base):
     timestamp: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.datetime.now
     )
-    user_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    action: Mapped[str] = mapped_column(String, nullable=False)
-    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    details_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     hash: Mapped[str] = mapped_column(String, nullable=False)
-    prev_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    @staticmethod
-    def generate_hash(
-        prev_hash: Optional[str], action: str, details: Optional[str]
-    ) -> str:
-        content = f"{prev_hash or ''}{action}{details or ''}{datetime.datetime.now()}"
-        return hashlib.sha256(content.encode()).hexdigest()
+
+class SuccessResponse(BaseModel):
+    detail: str
+    data: dict

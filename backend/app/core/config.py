@@ -8,7 +8,7 @@ load_dotenv()
 
 class Settings(BaseModel):
     APP_NAME: str = os.getenv("APP_NAME", "VaultX")
-    APP_ENV: str = os.getenv("APP_ENV", "development")
+    APP_ENV: str = os.getenv("APP_ENV", "dev")
     APP_SECRET_KEY: str = os.getenv("APP_SECRET_KEY", "supersecretkey")
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "supersecretjwtkey")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")

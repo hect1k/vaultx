@@ -34,7 +34,7 @@ def token_is_expired(created_at: Optional[datetime]) -> bool:
 
 
 def create_access_token(sub: str) -> str:
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": sub,
         "iat": now,
@@ -47,7 +47,7 @@ def create_access_token(sub: str) -> str:
 
 
 def create_refresh_token(sub: str) -> str:
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": sub,
         "iat": now,
