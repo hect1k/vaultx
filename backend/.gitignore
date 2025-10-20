@@ -1,62 +1,16 @@
-# --------------------
-# Python
-# --------------------
+# Python-generated files
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.pyc
-*.pyd
-*.pyo
-*.env
-*.env.*
-.venv/
-venv/
-env/
-ENV/
-pip-log.txt
-pip-delete-this-directory.txt
-*.egg-info/
-dist/
+*.py[oc]
 build/
-.eggs/
+dist/
+wheels/
+*.egg-info
 
-# --------------------
-# IDE / Editor
-# --------------------
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
-*.iml
+# Virtual environments
+.venv
+.venv/
+storage/
+__pycache__/
 
-# --------------------
-# Byte-compiled / caches
-# --------------------
-*.pytest_cache/
-.pytest_cache/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-*.tmp
-*.swp
-*.bak
-
-# --------------------
-# Uvicorn / FastAPI / Alembic
-# --------------------
-instance/
-*.db
-*.sqlite3
-alembic/versions/*.pyc
-
-# --------------------
-# OS files
-# --------------------
-.DS_Store
-Thumbs.db
+# Env files
+.env*

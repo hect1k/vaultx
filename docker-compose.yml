@@ -25,7 +25,7 @@ services:
       DB_NAME: vaultx
       DB_PORT: 5432
     ports:
-      - "8080:8080"
+      - "8000:8000"
     networks:
       - vaultx-network
 
@@ -37,7 +37,7 @@ services:
     depends_on:
       - backend
     environment:
-      NEXT_PUBLIC_API_URL: http://backend:8080
+      NEXT_PUBLIC_API_URL: http://backend:8000
     ports:
       - "3000:3000"
     networks:
