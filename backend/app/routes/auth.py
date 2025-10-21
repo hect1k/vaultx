@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -15,9 +16,13 @@ settings = Settings()
 router = APIRouter()
 
 
+class RequestTokenIn(BaseModel):
+    email: str
+
+
 @router.post("/request", response_model=SuccessResponse)
-async def request_token(email: str = Query(...), db: Session = Depends(get_db)):
-    email = email.lower()
+async def request_token(payload: RequestTokenIn, db: Session = Depends(get_db)):
+    email = payload.email.lower()
     hashed_email = hash_email(email)
 
     user = db.query(User).filter(User.email_hash == hashed_email).first()
@@ -39,7 +44,7 @@ async def request_token(email: str = Query(...), db: Session = Depends(get_db)):
     try:
         await email_service.send_magic_link(email, magic)
         return {
-            "detail": "Magic token sent via email!",
+            "detail": "Magic link sent via email!",
             "data": {"email": email},
         }
 
@@ -48,11 +53,14 @@ async def request_token(email: str = Query(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to send magic link")
 
 
+class ConsumeTokenIn(BaseModel):
+    email: str
+    token: str
+
+
 @router.post("/consume", response_model=dict)
-async def consume_token(
-    email: str = Query(...), token: str = Query(...), db: Session = Depends(get_db)
-):
-    email = email.lower()
+async def consume_token(payload: ConsumeTokenIn, db: Session = Depends(get_db)):
+    email = payload.email.lower()
     hashed_email = hash_email(email)
 
     user = db.query(User).filter(User.email_hash == hashed_email).first()
@@ -70,7 +78,7 @@ async def consume_token(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Token expired"
         )
 
-    provided_hash = auth_service.hash_token(token)
+    provided_hash = auth_service.hash_token(payload.token)
     if not hmac_compare(provided_hash, user.hashed_token):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"

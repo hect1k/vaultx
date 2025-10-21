@@ -341,10 +341,14 @@ async def delete_file(
     }
 
 
+class ShareFileIn(BaseModel):
+    email: str
+
+
 @router.post("/{file_id}/share", response_model=SuccessResponse)
 async def share_file(
     file_id: str,
-    email: str = Query(...),
+    payload: ShareFileIn,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -356,17 +360,19 @@ async def share_file(
 
     current_user_email = decrypt_email(current_user.email_enc)
 
-    if current_user_email == email.lower():
+    email = payload.email.lower()
+
+    if current_user_email == email:
         raise HTTPException(status_code=400, detail="Cannot share with yourself")
 
-    recipient_email_hash = hash_email(email.lower())
+    recipient_email_hash = hash_email(email)
 
     recipient = db.query(User).filter(User.email_hash == recipient_email_hash).first()
 
     if not recipient:  # then create a new user
         recipient = User(
             email_hash=recipient_email_hash,
-            email_enc=encrypt_email(email.lower()),
+            email_enc=encrypt_email(email),
         )
         db.add(recipient)
         db.commit()

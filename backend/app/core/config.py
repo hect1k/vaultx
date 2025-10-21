@@ -33,7 +33,7 @@ class Settings(BaseModel):
     MAIL_STARTTLS: bool = os.getenv("MAIL_STARTTLS", True) in ["true", "True"]
     MAIL_SSL_TLS: bool = os.getenv("MAIL_SSL_TLS", False) in ["true", "True"]
 
-    DEV_FRONTEND_DOMAIN: str = os.getenv("DEV_FRONTEND_DOMAIN", "http://localhost:3000")
+    DEV_FRONTEND_DOMAIN: str = os.getenv("DEV_FRONTEND_DOMAIN", "http://localhost:4321")
     PROD_FRONTEND_DOMAIN: str = os.getenv("PROD_FRONTEND_DOMAIN", "https://vaultx.in")
 
     class Config:
