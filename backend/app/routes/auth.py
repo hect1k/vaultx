@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,12 @@ async def request_token(payload: RequestTokenIn, db: Session = Depends(get_db)):
 
     await log_action_async(db, email, "AUTH", "Requested Magic Token")
 
+    # NOTE: Comment this out for sending actual mails
+    return {
+        "detail": "Magic token generated",
+        "data": {"token": magic, "email": email},
+    }
+
     try:
         await email_service.send_magic_link(email, magic)
         return {
@@ -65,9 +71,7 @@ async def consume_token(payload: ConsumeTokenIn, db: Session = Depends(get_db)):
 
     user = db.query(User).filter(User.email_hash == hashed_email).first()
     if not user or not user.hashed_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token or email"
-        )
+        raise HTTPException(status_code=400, detail="Invalid token or email")
 
     if auth_service.token_is_expired(user.token_created_at):
         user.hashed_token = None

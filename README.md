@@ -16,7 +16,7 @@
 
 ## Tech Stack
 
-- **Backend**: Go, GORM, PostgreSQL  
+- **Backend**: FastAPI, PostgreSQL  
 - **Frontend**: Next.js, React, TypeScript  
 - **Security**: AES-GCM encryption, Symmetric Searchable Encryption, Hash Chains for logging  
 - **Containerization**: Docker, Docker Compose  
@@ -40,7 +40,8 @@
 
 ```bash
 cd backend
-go run ./cmd/server
+uv sync
+uv run fastapi dev
 ````
 
 #### Frontend

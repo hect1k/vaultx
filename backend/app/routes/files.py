@@ -2,10 +2,10 @@ import mimetypes
 import os
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
@@ -44,7 +44,7 @@ async def list_files(
     shared_files = (
         db.query(File)
         .join(FileShare, FileShare.file_id == File.id)
-        .filter(FileShare.shared_with_email == current_user.email_hash)
+        .filter(FileShare.shared_with_email == current_user.email_enc)
         .all()
     )
 
@@ -64,12 +64,18 @@ async def list_files(
 
     result = []
     for f in paginated_files:
+        shared_to = []
+        if f.owner_id == current_user.id:
+            shares = db.query(FileShare).filter(FileShare.file_id == f.id).all()
+            shared_to = [decrypt_email(s.shared_with_email) for s in shares]
+
         result.append(
             {
                 "id": f.id,
                 "owner": decrypt_email(f.owner.email_enc),
                 "filename": f.filename,
                 "uploaded_at": f.uploaded_at,
+                **({"shared_to": shared_to} if shared_to else {}),
             }
         )
 
@@ -140,8 +146,8 @@ async def upload_file(
     db.commit()
     db.refresh(new_file)
 
-    name, ext = os.path.splitext(file.filename)
-    keywords_list = [name.lower(), ext.lower(), metadata["mime"].lower()]
+    _, ext = os.path.splitext(file.filename)
+    keywords_list = [ext.lower(), metadata["mime"].lower()]
 
     if keywords:
         user_keywords = [k.strip().lower() for k in keywords.split(",") if k.strip()]
@@ -210,7 +216,7 @@ async def search_files(
             or db.query(FileShare)
             .filter(
                 FileShare.file_id == f.id,
-                FileShare.shared_with_email == current_user.email_hash,
+                FileShare.shared_with_email == current_user.email_enc,
             )
             .first()
         )
@@ -260,7 +266,7 @@ async def download_file(
             db.query(FileShare)
             .filter(
                 FileShare.file_id == file_id,
-                FileShare.shared_with_email == current_user.email_hash,
+                FileShare.shared_with_email == current_user.email_enc,
             )
             .first()
         )
@@ -301,6 +307,60 @@ async def download_file(
         media_type=content_type,
         headers={"Content-Disposition": f'attachment; filename="{file.filename}"'},
     )
+
+
+@router.patch("/{file_id}", response_model=SuccessResponse)
+async def update_file(
+    file_id: str,
+    filename: Optional[str] = Body(None),
+    keywords: Optional[List[str]] = Body(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    file = db.query(File).filter(File.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if file.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only owner can update file")
+
+    changes = []
+    old_name = file.filename
+    ext = os.path.splitext(file.filename)[1]
+
+    if filename:
+        file.filename = filename
+        ext = os.path.splitext(filename)[1]
+        changes.append(f"Renamed from '{old_name}' to '{filename}'")
+
+    if keywords is not None:
+        db.query(FileKeyword).filter(FileKeyword.file_id == file.id).delete()
+
+        keywords.append(ext)
+        if file.meta_json:
+            keywords.append(file.meta_json.get("mime", "application/octet-stream"))
+
+        for kw in keywords:
+            hashed_kw = hash_keyword(kw)
+            db.add(FileKeyword(file_id=file.id, keyword=hashed_kw))
+
+        changes.append(f"Updated keywords to: {keywords}")
+
+    db.commit()
+
+    await log_action_async(
+        db,
+        decrypt_email(current_user.email_enc),
+        "UPDATED FILE",
+        f"File '{file.filename}' updated: {', '.join(changes)}",
+    )
+
+    return {
+        "detail": "File updated successfully",
+        "data": {
+            "file_id": file.id,
+        },
+    }
 
 
 @router.delete("/{file_id}", response_model=SuccessResponse)
@@ -382,7 +442,7 @@ async def share_file(
         db.query(FileShare)
         .filter(
             FileShare.file_id == file.id,
-            FileShare.shared_with_email == recipient.email_hash,
+            FileShare.shared_with_email == recipient.email_enc,
         )
         .first()
     )
@@ -393,7 +453,7 @@ async def share_file(
             "data": {"file_id": file_id},
         }
 
-    share = FileShare(file_id=file.id, shared_with_email=recipient.email_hash)
+    share = FileShare(file_id=file.id, shared_with_email=recipient.email_enc)
     db.add(share)
     db.commit()
 
@@ -406,5 +466,61 @@ async def share_file(
 
     return {
         "detail": f"File shared with {email.lower()}",
+        "data": {"file_id": file_id},
+    }
+
+
+class UnshareFileIn(BaseModel):
+    email: str
+
+
+@router.delete("/{file_id}/share", response_model=SuccessResponse)
+async def unshare_file(
+    file_id: str,
+    payload: UnshareFileIn,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    file = db.query(File).filter(File.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    if file.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only owner can unshare file")
+
+    current_user_email = decrypt_email(current_user.email_enc)
+
+    recipient_email = payload.email.lower()
+    recipient_email_hash = hash_email(recipient_email)
+    recipient = db.query(User).filter(User.email_hash == recipient_email_hash).first()
+    if not recipient:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    share = (
+        db.query(FileShare)
+        .filter(
+            FileShare.file_id == file.id,
+            FileShare.shared_with_email == recipient.email_enc,
+        )
+        .first()
+    )
+
+    if not share:
+        return {
+            "detail": "File not shared with this user",
+            "data": {"file_id": file_id},
+        }
+
+    db.delete(share)
+    db.commit()
+
+    await log_action_async(
+        db,
+        current_user_email,
+        "UNSHARE FILE",
+        f"Unshared {file.filename} with {recipient_email}",
+    )
+
+    return {
+        "detail": f"File unshared with {recipient_email}",
         "data": {"file_id": file_id},
     }
