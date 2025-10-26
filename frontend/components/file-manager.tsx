@@ -275,17 +275,11 @@ export function FileManager() {
       case "My Drive":
         setCurrentPath(["My Drive"])
         break
-      case "Shared with me":
-        setCurrentPath(["Shared with me"])
-        break
       case "Recent":
         setCurrentPath(["Recent"])
         break
       case "Starred":
         setCurrentPath(["Starred"])
-        break
-      case "Trash":
-        setCurrentPath(["Trash"])
         break
       default:
         setCurrentPath(["My Drive"])

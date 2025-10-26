@@ -23,10 +23,8 @@ export function Sidebar({ onNavigate, onCreateFolder }: SidebarProps) {
 
   const sidebarItems = [
     { icon: "drive", label: "My Drive", active: activeSection === "My Drive" },
-    { icon: "shared", label: "Shared with me", active: activeSection === "Shared with me" },
     { icon: "recent", label: "Recent", active: activeSection === "Recent" },
     { icon: "starred", label: "Starred", active: activeSection === "Starred" },
-    { icon: "trash", label: "Trash", active: activeSection === "Trash" },
   ]
 
   const handleNavigation = (section: string) => {
@@ -103,12 +101,9 @@ export function Sidebar({ onNavigate, onCreateFolder }: SidebarProps) {
       <div className="mt-6 p-3 bg-card rounded-lg border border-border">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-card-foreground">Storage</span>
-          <span className="text-xs text-muted-foreground">2.1 GB of 15 GB used</span>
+          <span className="text-xs text-muted-foreground">3.76 GB of 15 GB used</span>
         </div>
-        <Progress value={14} className="h-2 mb-2" />
-        <Button variant="outline" size="sm" className="w-full text-xs bg-transparent">
-          Buy storage
-        </Button>
+        <Progress value={25} className="h-2 mb-2" />
       </div>
 
       <UploadModal open={uploadModalOpen} onOpenChange={setUploadModalOpen} />
