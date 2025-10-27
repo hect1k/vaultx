@@ -80,10 +80,6 @@ def decrypt_file_streamed(enc_path: str, key: bytes):
 
 
 def encrypt_data(plaintext: str) -> str:
-    """
-    Encrypts plaintext bytes using AES-256-GCM.
-    Returns base64-encoded string (nonce + ciphertext + tag).
-    """
     if len(APP_LOGS_KEY) != 32:
         raise ValueError("AES key must be 32 bytes for AES-256-GCM")
 
@@ -95,10 +91,6 @@ def encrypt_data(plaintext: str) -> str:
 
 
 def decrypt_data(ciphertext_b64: str) -> str:
-    """
-    Decrypts a base64-encoded string produced by encrypt_data().
-    Returns plaintext bytes.
-    """
     if len(APP_LOGS_KEY) != 32:
         raise ValueError("AES key must be 32 bytes for AES-256-GCM")
 
