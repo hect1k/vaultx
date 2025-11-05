@@ -1,86 +1,51 @@
-"use client"
+"use client";
 
-import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { UploadModal } from "@/components/upload-modal"
-import { useState } from "react"
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { UploadModal } from "@/components/upload-modal";
+import { useState } from "react";
 
 interface SidebarProps {
-  onNavigate?: (section: string) => void
-  onCreateFolder?: () => void
+  onNavigate?: (section: string) => void;
 }
 
-export function Sidebar({ onNavigate, onCreateFolder }: SidebarProps) {
-  const [uploadModalOpen, setUploadModalOpen] = useState(false)
-  const [activeSection, setActiveSection] = useState("My Drive")
+export function Sidebar({ onNavigate }: SidebarProps) {
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState("My Drive");
 
   const sidebarItems = [
     { icon: "drive", label: "My Drive", active: activeSection === "My Drive" },
     { icon: "recent", label: "Recent", active: activeSection === "Recent" },
     { icon: "starred", label: "Starred", active: activeSection === "Starred" },
-  ]
+  ];
 
   const handleNavigation = (section: string) => {
-    setActiveSection(section)
-    onNavigate?.(section)
-  }
+    setActiveSection(section);
+    onNavigate?.(section);
+  };
 
   return (
     <div className="w-64 border-r border-border bg-sidebar p-4 flex flex-col">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button className="w-full mb-6 bg-primary hover:bg-primary/90 text-primary-foreground">
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
-          <DropdownMenuItem onClick={() => setUploadModalOpen(true)}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-              />
-            </svg>
-            File upload
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setUploadModalOpen(true)}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"
-              />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5l4-4 4 4" />
-            </svg>
-            Folder upload
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onCreateFolder}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"
-              />
-            </svg>
-            New folder
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* New button now directly opens the upload modal */}
+      <Button
+        className="w-full mb-6 bg-primary hover:bg-primary/90 text-primary-foreground"
+        onClick={() => setUploadModalOpen(true)}
+      >
+        <svg
+          className="w-4 h-4 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 4v16m8-8H4"
+          />
+        </svg>
+        Upload File
+      </Button>
 
       {/* Navigation Items */}
       <nav className="space-y-1 flex-1">
@@ -100,18 +65,28 @@ export function Sidebar({ onNavigate, onCreateFolder }: SidebarProps) {
       {/* Storage Info */}
       <div className="mt-6 p-3 bg-card rounded-lg border border-border">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-card-foreground">Storage</span>
-          <span className="text-xs text-muted-foreground">3.76 GB of 15 GB used</span>
+          <span className="text-sm font-medium text-card-foreground">
+            Storage
+          </span>
+          <span className="text-xs text-muted-foreground">
+            3.76 GB of 15 GB used
+          </span>
         </div>
         <Progress value={25} className="h-2 mb-2" />
       </div>
 
       <UploadModal open={uploadModalOpen} onOpenChange={setUploadModalOpen} />
     </div>
-  )
+  );
 }
 
-function SidebarIcon({ type, className }: { type: string; className?: string }) {
+function SidebarIcon({
+  type,
+  className,
+}: {
+  type: string;
+  className?: string;
+}) {
   const icons = {
     drive: (
       <path
@@ -126,7 +101,7 @@ function SidebarIcon({ type, className }: { type: string; className?: string }) 
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={2}
-        d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 002 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
+        d="M9 3v2m6-2v2m-6 14v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 002 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
       />
     ),
     shared: (
@@ -161,11 +136,16 @@ function SidebarIcon({ type, className }: { type: string; className?: string }) 
         d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
       />
     ),
-  }
+  };
 
   return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
       {icons[type as keyof typeof icons]}
     </svg>
-  )
+  );
 }
