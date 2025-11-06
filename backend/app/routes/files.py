@@ -1,5 +1,6 @@
 import base64
 import json
+import uuid
 from typing import Any, List
 
 from fastapi import APIRouter, Depends
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/files", tags=["files"])
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
+    file_id: str = Form(...),
     metadata_ciphertext: str = Form(...),
     tokens_json: str = Form(...),
     encrypted_kf_b64: str = Form(...),
@@ -31,6 +33,16 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+
+    try:
+        file_uuid = uuid.UUID(file_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid file_id")
+
+    existing = await db.get(File, file_uuid)
+    if existing:
+        raise HTTPException(status_code=409, detail="File ID already exists")
+
     data = await file.read()
     try:
         encrypted_kf = base64.b64decode(encrypted_kf_b64)
@@ -38,6 +50,7 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="Invalid encrypted_kf_b64")
 
     new_file = File(
+        id=file_uuid,
         owner_id=current_user.id,
         ciphertext=data,
         metadata_ciphertext=base64.b64decode(metadata_ciphertext),
@@ -263,7 +276,7 @@ async def download_file(
     entry = result.first()
     if not entry:
         raise HTTPException(status_code=404, detail="File not found")
-    f, owner_email = entry
+    f, _ = entry
     if f.owner_id != current_user.id:
         share_check = await db.execute(
             select(FileShare).where(

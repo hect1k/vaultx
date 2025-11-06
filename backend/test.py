@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+import uuid
 
 import requests
 
@@ -71,24 +72,35 @@ def login(email):
 
 def upload_file(token):
     hr("Upload File")
+    file_id = str(uuid.uuid4())
     metadata_ciphertext = gen_b64()
     encrypted_kf_b64 = gen_b64()
     tokens_json = json.dumps(
         [{"token": gen_b64(8), "value": gen_b64(8), "prev_token": None}]
     )
 
-    files = {
-        "file": ("test.txt", b"Hello encrypted world!"),
-        "metadata_ciphertext": (None, metadata_ciphertext),
-        "encrypted_kf_b64": (None, encrypted_kf_b64),
-        "tokens_json": (None, tokens_json),
+    files = {"file": ("test.txt", b"Hello encrypted world!")}
+
+    data = {
+        "file_id": file_id,
+        "metadata_ciphertext": metadata_ciphertext,
+        "encrypted_kf_b64": encrypted_kf_b64,
+        "tokens_json": tokens_json,
     }
 
-    r = requests.post(f"{BASE}/files/upload", files=files, headers=auth_header(token))
+    r = requests.post(
+        f"{BASE}/files/upload",
+        files=files,
+        data=data,
+        headers=auth_header(token),
+    )
+
     pretty(r)
     step_ok(r.status_code == 200)
+
     if r.ok:
         return r.json()["id"], json.loads(tokens_json)
+
     sys.exit(1)
 
 
