@@ -35,6 +35,7 @@ class FileListItem(BaseModel):
     id: UUID
     owner_email: str
     metadata_ciphertext: str
+    metadata_iv: str
     created_at: datetime
     deleted: bool
     shared_with: list[SharedUser] = []
@@ -50,7 +51,11 @@ class FileBatchList(BaseModel):
 class FileDownloadResponse(BaseModel):
     id: UUID
     ciphertext: str
+    file_iv: str
     metadata_ciphertext: str
+    metadata_iv: str
+    encrypted_kf_b64: str
+    encrypted_kf_iv: str
     created_at: datetime
 
     class Config:

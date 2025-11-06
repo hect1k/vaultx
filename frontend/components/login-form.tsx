@@ -21,17 +21,19 @@ export function LoginForm() {
     e.preventDefault()
     setLoading(true)
 
-    try {
-      const res = await api.post("/auth/request", { email })
-      console.log("Email request response:", res)
-      alert("Login token sent to your email!")
-      setStep("token")
-    } catch (err) {
-      console.error("Error requesting token:", err)
-      alert("Failed to send token. Check backend or email address.")
-    } finally {
-      setLoading(false)
-    }
+    // try {
+    //   const res = await api.post("/auth/request", { email })
+    //   console.log("Email request response:", res)
+    //   alert("Login token sent to your email!")
+    //   setStep("token")
+    // } catch (err) {
+    //   console.error("Error requesting token:", err)
+    //   alert("Failed to send token. Check backend or email address.")
+    // } finally {
+    //   setLoading(false)
+    // }
+
+    router.push("/dashboard")
   }
 
   // Step 2: Consume token for access

@@ -27,13 +27,15 @@ router = APIRouter(prefix="/files", tags=["files"])
 async def upload_file(
     file_id: str = Form(...),
     metadata_ciphertext: str = Form(...),
+    metadata_iv: str = Form(...),
     tokens_json: str = Form(...),
     encrypted_kf_b64: str = Form(...),
+    encrypted_kf_iv: str = Form(...),
+    file_iv: str = Form(...),
     file: UploadFile = FastAPIFile(...),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-
     try:
         file_uuid = uuid.UUID(file_id)
     except Exception:
@@ -43,18 +45,25 @@ async def upload_file(
     if existing:
         raise HTTPException(status_code=409, detail="File ID already exists")
 
-    data = await file.read()
     try:
+        data = await file.read()
         encrypted_kf = base64.b64decode(encrypted_kf_b64)
+        metadata_bytes = base64.b64decode(metadata_ciphertext)
+        metadata_iv_b = base64.b64decode(metadata_iv)
+        encrypted_kf_iv_b = base64.b64decode(encrypted_kf_iv)
+        file_iv_b = base64.b64decode(file_iv)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid encrypted_kf_b64")
+        raise HTTPException(status_code=400, detail="Invalid base64 input")
 
     new_file = File(
         id=file_uuid,
         owner_id=current_user.id,
         ciphertext=data,
-        metadata_ciphertext=base64.b64decode(metadata_ciphertext),
+        metadata_ciphertext=metadata_bytes,
+        metadata_iv=metadata_iv_b,
         encrypted_kf=encrypted_kf,
+        encrypted_kf_iv=encrypted_kf_iv_b,
+        file_iv=file_iv_b,
     )
     db.add(new_file)
     await db.flush()
@@ -80,7 +89,8 @@ async def upload_file(
     await db.commit()
     await db.refresh(new_file)
     return FileUploadResponse(
-        id=getattr(new_file, "id"), created_at=getattr(new_file, "created_at")
+        id=getattr(new_file, "id"),
+        created_at=getattr(new_file, "created_at"),
     )
 
 
@@ -128,13 +138,12 @@ async def list_files(
         shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
         out.append(
             FileListItem(
-                id=getattr(f, "id"),
+                id=f.id,
                 owner_email=owner_email,
-                metadata_ciphertext=base64.b64encode(
-                    bytes(getattr(f, "metadata_ciphertext"))
-                ).decode(),
-                created_at=getattr(f, "created_at"),
-                deleted=bool(getattr(f, "deleted")),
+                metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
+                metadata_iv=base64.b64encode(f.metadata_iv).decode(),
+                created_at=f.created_at,
+                deleted=bool(f.deleted),
                 shared_with=shared_emails,
             )
         )
@@ -142,13 +151,12 @@ async def list_files(
     for f, owner_email, _ in shared_files:
         out.append(
             FileListItem(
-                id=getattr(f, "id"),
+                id=f.id,
                 owner_email=owner_email,
-                metadata_ciphertext=base64.b64encode(
-                    bytes(getattr(f, "metadata_ciphertext"))
-                ).decode(),
-                created_at=getattr(f, "created_at"),
-                deleted=bool(getattr(f, "deleted")),
+                metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
+                metadata_iv=base64.b64encode(f.metadata_iv).decode(),
+                created_at=f.created_at,
+                deleted=bool(f.deleted),
                 shared_with=[],
             )
         )
@@ -162,50 +170,6 @@ async def list_files(
     }
 
 
-@router.get("/{file_id}", response_model=FileListItem)
-async def get_file(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    result = await db.execute(
-        select(File, User.email)
-        .join(User, File.owner_id == User.id)
-        .where(File.id == file_id)
-    )
-    entry = result.first()
-    if not entry:
-        raise HTTPException(status_code=404, detail="File not found")
-    f, owner_email = entry
-    if f.owner_id != current_user.id:
-        share_check = await db.execute(
-            select(FileShare).where(
-                FileShare.file_id == f.id,
-                FileShare.recipient_user_id == current_user.id,
-            )
-        )
-        if not share_check.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="Access denied")
-    shared_emails = []
-    if f.owner_id == current_user.id:
-        shared_entries = await db.execute(
-            select(User.email)
-            .join(FileShare, FileShare.recipient_user_id == User.id)
-            .where(FileShare.file_id == f.id)
-        )
-        shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
-    return FileListItem(
-        id=getattr(f, "id"),
-        owner_email=owner_email,
-        metadata_ciphertext=base64.b64encode(
-            bytes(getattr(f, "metadata_ciphertext"))
-        ).decode(),
-        created_at=getattr(f, "created_at"),
-        deleted=bool(getattr(f, "deleted")),
-        shared_with=shared_emails,
-    )
-
-
 @router.post("/batch", response_model=dict)
 async def list_files_by_ids(
     payload: FileBatchList,
@@ -214,7 +178,6 @@ async def list_files_by_ids(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-
     ids = payload.ids
     if not ids:
         raise HTTPException(status_code=400, detail="No file IDs provided")
@@ -227,7 +190,6 @@ async def list_files_by_ids(
         .offset(offset)
     )
     files = result.all()
-
     total = len(ids)
     out: List[FileListItem] = []
 
@@ -242,13 +204,12 @@ async def list_files_by_ids(
             shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
         out.append(
             FileListItem(
-                id=getattr(f, "id"),
+                id=f.id,
                 owner_email=owner_email,
-                metadata_ciphertext=base64.b64encode(
-                    bytes(getattr(f, "metadata_ciphertext"))
-                ).decode(),
-                created_at=getattr(f, "created_at"),
-                deleted=bool(getattr(f, "deleted")),
+                metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
+                metadata_iv=base64.b64encode(f.metadata_iv).decode(),
+                created_at=f.created_at,
+                deleted=bool(f.deleted),
                 shared_with=shared_emails,
             )
         )
@@ -287,12 +248,14 @@ async def download_file(
         if not share_check.scalar_one_or_none():
             raise HTTPException(status_code=403, detail="Access denied")
     return FileDownloadResponse(
-        id=getattr(f, "id"),
-        ciphertext=base64.b64encode(bytes(getattr(f, "ciphertext"))).decode(),
-        metadata_ciphertext=base64.b64encode(
-            bytes(getattr(f, "metadata_ciphertext"))
-        ).decode(),
-        created_at=getattr(f, "created_at"),
+        id=f.id,
+        ciphertext=base64.b64encode(f.ciphertext).decode(),
+        metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
+        metadata_iv=base64.b64encode(f.metadata_iv).decode(),
+        encrypted_kf_b64=base64.b64encode(f.encrypted_kf).decode(),
+        encrypted_kf_iv=base64.b64encode(f.encrypted_kf_iv).decode(),
+        file_iv=base64.b64encode(f.file_iv).decode(),
+        created_at=f.created_at,
     )
 
 
@@ -308,6 +271,6 @@ async def delete_file(
     f: Any = result.scalar_one_or_none()
     if not f:
         raise HTTPException(status_code=404, detail="File not found")
-    setattr(f, "deleted", True)
+    f.deleted = True
     await db.commit()
-    return {"deleted": True, "file_id": str(getattr(f, "id"))}
+    return {"deleted": True, "file_id": str(f.id)}

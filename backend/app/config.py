@@ -18,10 +18,6 @@ class Settings(BaseSettings):
     db_user: str = Field(..., alias="DB_USER")
     db_password: str = Field(..., alias="DB_PASSWORD")
 
-    # Storage
-    storage_path: str = Field("./storage", alias="STORAGE_PATH")
-    log_path: str = Field("./logs", alias="LOG_PATH")
-
     # Mail
     mail_host: str = Field(..., alias="MAIL_HOST")
     mail_port: int = Field(..., alias="MAIL_PORT")
@@ -32,7 +28,7 @@ class Settings(BaseSettings):
     mail_ssl_tls: bool = Field(False, alias="MAIL_SSL_TLS")
 
     # Frontend
-    dev_frontend_url: str = Field("http://localhost:4321", alias="DEV_FRONTEND_URL")
+    dev_frontend_url: str = Field("http://localhost:3000", alias="DEV_FRONTEND_URL")
     prod_frontend_url: str = Field("https://vaultx.in", alias="PROD_FRONTEND_URL")
 
     @property

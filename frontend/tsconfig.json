@@ -12,6 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
+    "lib": ["ES2021", "DOM"],
     "incremental": true,
     "plugins": [
       {

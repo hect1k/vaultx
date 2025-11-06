@@ -80,8 +80,11 @@ class File(Base):
         index=True,
     )
     ciphertext = Column(LargeBinary, nullable=False)
+    file_iv = Column(LargeBinary, nullable=False)
     metadata_ciphertext = Column(LargeBinary, nullable=False)
+    metadata_iv = Column(LargeBinary, nullable=False)
     encrypted_kf = Column(LargeBinary, nullable=True)
+    encrypted_kf_iv = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.now, nullable=False)
     deleted = Column(Boolean, default=False, nullable=False)
     owner = relationship("User", back_populates="files")
