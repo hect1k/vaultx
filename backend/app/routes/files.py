@@ -1,526 +1,300 @@
-import mimetypes
-import os
-import uuid
-from datetime import datetime
-from typing import List, Literal, Optional
+import base64
+import json
+from typing import Any, List
 
-from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, UploadFile
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from starlette.responses import StreamingResponse
+from fastapi import APIRouter, Depends
+from fastapi import File as FastAPIFile
+from fastapi import Form, HTTPException, Query, UploadFile
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings
-from app.deps import get_current_user, get_db
-from app.models.models import File, FileKeyword, FileShare, SuccessResponse, User
-from app.services.auth_service import decrypt_for_user, encrypt_for_user
-from app.utils.crypto import (
-    decrypt_email,
-    decrypt_file_streamed,
-    encrypt_email,
-    encrypt_file_streamed,
-    generate_aes_key,
-    hash_email,
-    hash_keyword,
+from app.core.deps import get_current_user
+from app.db import get_db
+from app.models import File, FileShare, IndexEntry, User
+from app.schemas import (
+    FileBatchList,
+    FileDownloadResponse,
+    FileListItem,
+    FileUploadResponse,
+    SharedUser,
 )
-from app.utils.logging import log_action_async
 
-router = APIRouter()
-
-settings = Settings()
-UPLOAD_DIR = os.path.join(settings.STORAGE_PATH, "files")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(UPLOAD_DIR + "/tmp", exist_ok=True)
+router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.get("/", response_model=SuccessResponse)
-async def list_files(
-    filter: Literal["all", "owned", "shared"] = Query("all"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    owned_files = db.query(File).filter(File.owner_id == current_user.id).all()
-    shared_files = (
-        db.query(File)
-        .join(FileShare, FileShare.file_id == File.id)
-        .filter(FileShare.shared_with_email == current_user.email_enc)
-        .all()
-    )
-
-    if filter == "owned":
-        files = owned_files
-    elif filter == "shared":
-        files = shared_files
-    else:
-        files = owned_files + shared_files
-
-    files.sort(key=lambda f: f.uploaded_at, reverse=True)
-
-    total = len(files)
-    start = (page - 1) * limit
-    end = start + limit
-    paginated_files = files[start:end]
-
-    result = []
-    for f in paginated_files:
-        shared_to = []
-        if f.owner_id == current_user.id:
-            shares = db.query(FileShare).filter(FileShare.file_id == f.id).all()
-            shared_to = [decrypt_email(s.shared_with_email) for s in shares]
-
-        result.append(
-            {
-                "id": f.id,
-                "owner": decrypt_email(f.owner.email_enc),
-                "filename": f.filename,
-                "uploaded_at": f.uploaded_at,
-                **({"shared_to": shared_to} if shared_to else {}),
-            }
-        )
-
-    await log_action_async(
-        db,
-        decrypt_email(current_user.email_enc),
-        "LIST FILES",
-        f"Listed {len(result)} files (page {page}, limit {limit})",
-    )
-
-    return {
-        "detail": "Successfully listed files",
-        "data": {
-            "page": page,
-            "limit": limit,
-            "total": total,
-            "files": result,
-        },
-    }
-
-
-@router.post("/", response_model=SuccessResponse)
+@router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
-    file: UploadFile,
-    keywords: str | None = Form(None),
-    db: Session = Depends(get_db),
+    metadata_ciphertext: str = Form(...),
+    tokens_json: str = Form(...),
+    encrypted_kf_b64: str = Form(...),
+    file: UploadFile = FastAPIFile(...),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-
-    current_user_email = decrypt_email(current_user.email_enc)
-    file_id = str(uuid.uuid4())
-
-    temp_path = os.path.join(UPLOAD_DIR, "tmp", file_id)
+    data = await file.read()
     try:
-        with open(temp_path, "wb") as f:
-            f.write(await file.read())
-    except Exception as e:
-        print("ERROR SAVING TEMP FILE: ", e)
-        raise HTTPException(status_code=500, detail="Failed to save file")
-
-    mime_type, _ = mimetypes.guess_type(file.filename)
-    file_stats = os.stat(temp_path)
-    metadata = {
-        "filename": file.filename,
-        "size": file_stats.st_size,
-        "mime": mime_type or "application/octet-stream",
-        "uploaded_at": datetime.now().isoformat(),
-    }
-
-    aes_key = generate_aes_key()
-    encrypted_path = os.path.join(UPLOAD_DIR, f"{file_id}.enc")
-    encrypt_file_streamed(temp_path, encrypted_path, aes_key)
-
-    encryption_key_enc = encrypt_for_user(current_user_email, aes_key.hex())
+        encrypted_kf = base64.b64decode(encrypted_kf_b64)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid encrypted_kf_b64")
 
     new_file = File(
-        id=file_id,
         owner_id=current_user.id,
-        filename=file.filename,
-        filepath=encrypted_path,
-        meta_json=metadata,
-        encryption_key_enc=encryption_key_enc,
+        ciphertext=data,
+        metadata_ciphertext=base64.b64decode(metadata_ciphertext),
+        encrypted_kf=encrypted_kf,
     )
     db.add(new_file)
-    db.commit()
-    db.refresh(new_file)
-
-    _, ext = os.path.splitext(file.filename)
-    keywords_list = [ext.lower(), metadata["mime"].lower()]
-
-    if keywords:
-        user_keywords = [k.strip().lower() for k in keywords.split(",") if k.strip()]
-        keywords_list.extend(user_keywords)
-
-    for kw in keywords_list:
-        db.add(FileKeyword(file_id=new_file.id, keyword=hash_keyword(kw)))
-    db.commit()
+    await db.flush()
 
     try:
-        os.remove(temp_path)
+        tokens = json.loads(tokens_json)
     except Exception:
-        pass
+        raise HTTPException(status_code=400, detail="Invalid tokens JSON")
 
-    await log_action_async(
-        db, current_user_email, "UPLOAD FILE", f"File {file.filename} uploaded"
+    for t in tokens:
+        token_b = base64.b64decode(t["token"])
+        value_b = base64.b64decode(t["value"])
+        prev_b = base64.b64decode(t["prev_token"]) if t.get("prev_token") else None
+        db.add(
+            IndexEntry(
+                token=token_b,
+                owner_id=current_user.id,
+                value=value_b,
+                prev_token=prev_b,
+            )
+        )
+
+    await db.commit()
+    await db.refresh(new_file)
+    return FileUploadResponse(
+        id=getattr(new_file, "id"), created_at=getattr(new_file, "created_at")
     )
 
+
+@router.get("", response_model=dict)
+async def list_files(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    total_query = await db.execute(
+        select(func.count())
+        .select_from(File)
+        .where(File.owner_id == current_user.id, File.deleted.is_(False))
+    )
+    total = total_query.scalar_one()
+
+    result = await db.execute(
+        select(File, User.email)
+        .join(User, File.owner_id == User.id)
+        .where(File.owner_id == current_user.id, File.deleted.is_(False))
+        .limit(limit)
+        .offset(offset)
+    )
+    owned_files = result.all()
+
+    shared_result = await db.execute(
+        select(File, User.email, FileShare)
+        .join(User, File.owner_id == User.id)
+        .join(FileShare, FileShare.file_id == File.id)
+        .where(FileShare.recipient_user_id == current_user.id, File.deleted.is_(False))
+        .limit(limit)
+        .offset(offset)
+    )
+    shared_files = shared_result.all()
+
+    out: List[FileListItem] = []
+
+    for f, owner_email in owned_files:
+        shared_entries = await db.execute(
+            select(User.email)
+            .join(FileShare, FileShare.recipient_user_id == User.id)
+            .where(FileShare.file_id == f.id)
+        )
+        shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
+        out.append(
+            FileListItem(
+                id=getattr(f, "id"),
+                owner_email=owner_email,
+                metadata_ciphertext=base64.b64encode(
+                    bytes(getattr(f, "metadata_ciphertext"))
+                ).decode(),
+                created_at=getattr(f, "created_at"),
+                deleted=bool(getattr(f, "deleted")),
+                shared_with=shared_emails,
+            )
+        )
+
+    for f, owner_email, _ in shared_files:
+        out.append(
+            FileListItem(
+                id=getattr(f, "id"),
+                owner_email=owner_email,
+                metadata_ciphertext=base64.b64encode(
+                    bytes(getattr(f, "metadata_ciphertext"))
+                ).decode(),
+                created_at=getattr(f, "created_at"),
+                deleted=bool(getattr(f, "deleted")),
+                shared_with=[],
+            )
+        )
+
     return {
-        "detail": "File uploaded successfully",
-        "data": {
-            "id": new_file.id,
-            "owner": current_user_email,
-            "filename": new_file.filename,
-            "uploaded_at": new_file.uploaded_at,
-        },
+        "total": total,
+        "count": len(out),
+        "limit": limit,
+        "offset": offset,
+        "files": out,
     }
 
 
-@router.get("/search", response_model=SuccessResponse)
-async def search_files(
-    q: str = Query(..., min_length=1),
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(get_db),
+@router.get("/{file_id}", response_model=FileListItem)
+async def get_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    if not q:
-        raise HTTPException(status_code=400, detail="Query parameter is required")
-
-    current_user_email = decrypt_email(current_user.email_enc)
-    await log_action_async(db, current_user_email, "SEARCH FILES", f"Searched for {q}")
-
-    q_hash = hash_keyword(q)
-
-    keyword_matches = (
-        db.query(FileKeyword.file_id).filter(FileKeyword.keyword == q_hash).subquery()
+    result = await db.execute(
+        select(File, User.email)
+        .join(User, File.owner_id == User.id)
+        .where(File.id == file_id)
     )
-    filename_matches = (
-        db.query(File.id).filter(File.filename.ilike(f"%{q.lower()}%")).subquery()
-    )
-
-    matched_files = (
-        db.query(File)
-        .filter(
-            (File.id.in_(keyword_matches.select()))
-            | (File.id.in_(filename_matches.select()))
-        )
-        .all()
-    )
-
-    accessible_files = []
-    for f in matched_files:
-        has_access = (
-            f.owner_id == current_user.id
-            or db.query(FileShare)
-            .filter(
+    entry = result.first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="File not found")
+    f, owner_email = entry
+    if f.owner_id != current_user.id:
+        share_check = await db.execute(
+            select(FileShare).where(
                 FileShare.file_id == f.id,
-                FileShare.shared_with_email == current_user.email_enc,
+                FileShare.recipient_user_id == current_user.id,
             )
-            .first()
         )
-        if has_access:
-            accessible_files.append(
-                {
-                    "id": f.id,
-                    "filename": f.filename,
-                    "uploaded_at": f.uploaded_at.isoformat(),
-                    "owner": decrypt_email(f.owner.email_enc),
-                }
+        if not share_check.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Access denied")
+    shared_emails = []
+    if f.owner_id == current_user.id:
+        shared_entries = await db.execute(
+            select(User.email)
+            .join(FileShare, FileShare.recipient_user_id == User.id)
+            .where(FileShare.file_id == f.id)
+        )
+        shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
+    return FileListItem(
+        id=getattr(f, "id"),
+        owner_email=owner_email,
+        metadata_ciphertext=base64.b64encode(
+            bytes(getattr(f, "metadata_ciphertext"))
+        ).decode(),
+        created_at=getattr(f, "created_at"),
+        deleted=bool(getattr(f, "deleted")),
+        shared_with=shared_emails,
+    )
+
+
+@router.post("/batch", response_model=dict)
+async def list_files_by_ids(
+    payload: FileBatchList,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+
+    ids = payload.ids
+    if not ids:
+        raise HTTPException(status_code=400, detail="No file IDs provided")
+
+    result = await db.execute(
+        select(File, User.email)
+        .join(User, File.owner_id == User.id)
+        .where(File.id.in_(ids), File.deleted.is_(False))
+        .limit(limit)
+        .offset(offset)
+    )
+    files = result.all()
+
+    total = len(ids)
+    out: List[FileListItem] = []
+
+    for f, owner_email in files:
+        shared_emails = []
+        if f.owner_id == current_user.id:
+            shared_entries = await db.execute(
+                select(User.email)
+                .join(FileShare, FileShare.recipient_user_id == User.id)
+                .where(FileShare.file_id == f.id)
             )
-
-    accessible_files.sort(key=lambda x: x["uploaded_at"], reverse=True)
-
-    total = len(accessible_files)
-    start = (page - 1) * limit
-    end = start + limit
-    paginated_files = accessible_files[start:end]
+            shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
+        out.append(
+            FileListItem(
+                id=getattr(f, "id"),
+                owner_email=owner_email,
+                metadata_ciphertext=base64.b64encode(
+                    bytes(getattr(f, "metadata_ciphertext"))
+                ).decode(),
+                created_at=getattr(f, "created_at"),
+                deleted=bool(getattr(f, "deleted")),
+                shared_with=shared_emails,
+            )
+        )
 
     return {
-        "detail": f"{total} files found",
-        "data": {
-            "query": q,
-            "page": page,
-            "limit": limit,
-            "total": total,
-            "results": paginated_files,
-        },
+        "total": total,
+        "count": len(out),
+        "limit": limit,
+        "offset": offset,
+        "files": out,
     }
 
 
-@router.get("/{file_id}")
+@router.get("/{file_id}/download", response_model=FileDownloadResponse)
 async def download_file(
     file_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    file = db.query(File).filter(File.id == file_id).first()
-    if not file:
+    result = await db.execute(
+        select(File, User.email)
+        .join(User, File.owner_id == User.id)
+        .where(File.id == file_id)
+    )
+    entry = result.first()
+    if not entry:
         raise HTTPException(status_code=404, detail="File not found")
-
-    current_user_email = decrypt_email(current_user.email_enc)
-
-    if file.owner_id != current_user.id:
-        shared = (
-            db.query(FileShare)
-            .filter(
-                FileShare.file_id == file_id,
-                FileShare.shared_with_email == current_user.email_enc,
+    f, owner_email = entry
+    if f.owner_id != current_user.id:
+        share_check = await db.execute(
+            select(FileShare).where(
+                FileShare.file_id == f.id,
+                FileShare.recipient_user_id == current_user.id,
             )
-            .first()
         )
-        if not shared:
-            await log_action_async(
-                db,
-                current_user_email,
-                "DOWNLOAD FILE",
-                f"Tried to download {file.filename} without permission",
-            )
+        if not share_check.scalar_one_or_none():
             raise HTTPException(status_code=403, detail="Access denied")
-
-    try:
-        aes_key_hex = decrypt_for_user(
-            decrypt_email(file.owner.email_enc), file.encryption_key_enc
-        )
-        aes_key = bytes.fromhex(aes_key_hex)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to decrypt file key")
-
-    if not os.path.exists(file.filepath):
-        raise HTTPException(status_code=404, detail="Encrypted file missing")
-
-    def file_iterator():
-        yield from decrypt_file_streamed(file.filepath, aes_key)
-
-    if file.meta_json:
-        content_type = file.meta_json.get("mime", "application/octet-stream")
-    else:
-        content_type = "application/octet-stream"
-
-    await log_action_async(
-        db, current_user_email, "DOWNLOAD FILE", f"File {file.filename} downloaded"
-    )
-
-    return StreamingResponse(
-        file_iterator(),
-        media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{file.filename}"'},
+    return FileDownloadResponse(
+        id=getattr(f, "id"),
+        ciphertext=base64.b64encode(bytes(getattr(f, "ciphertext"))).decode(),
+        metadata_ciphertext=base64.b64encode(
+            bytes(getattr(f, "metadata_ciphertext"))
+        ).decode(),
+        created_at=getattr(f, "created_at"),
     )
 
 
-@router.patch("/{file_id}", response_model=SuccessResponse)
-async def update_file(
-    file_id: str,
-    filename: Optional[str] = Body(None),
-    keywords: Optional[List[str]] = Body(None),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    file = db.query(File).filter(File.id == file_id).first()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    if file.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only owner can update file")
-
-    changes = []
-    old_name = file.filename
-    ext = os.path.splitext(file.filename)[1]
-
-    if filename:
-        file.filename = filename
-        ext = os.path.splitext(filename)[1]
-        changes.append(f"Renamed from '{old_name}' to '{filename}'")
-
-    if keywords is not None:
-        db.query(FileKeyword).filter(FileKeyword.file_id == file.id).delete()
-
-        keywords.append(ext)
-        if file.meta_json:
-            keywords.append(file.meta_json.get("mime", "application/octet-stream"))
-
-        for kw in keywords:
-            hashed_kw = hash_keyword(kw)
-            db.add(FileKeyword(file_id=file.id, keyword=hashed_kw))
-
-        changes.append(f"Updated keywords to: {keywords}")
-
-    db.commit()
-
-    await log_action_async(
-        db,
-        decrypt_email(current_user.email_enc),
-        "UPDATED FILE",
-        f"File '{file.filename}' updated: {', '.join(changes)}",
-    )
-
-    return {
-        "detail": "File updated successfully",
-        "data": {
-            "file_id": file.id,
-        },
-    }
-
-
-@router.delete("/{file_id}", response_model=SuccessResponse)
+@router.delete("/{file_id}")
 async def delete_file(
     file_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    current_user_email = decrypt_email(current_user.email_enc)
-
-    file = db.query(File).filter(File.id == file_id).first()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    if file.owner_id != current_user.id:
-        await log_action_async(
-            db,
-            current_user_email,
-            "DELETE FILE",
-            f"Tried to delete {file.filename} without permission",
-        )
-        raise HTTPException(status_code=403, detail="Only owner can delete file")
-
-    file_path = os.path.join(settings.STORAGE_PATH, "files", file.filename)
-    if os.path.exists(file_path):
-        os.remove(file_path)
-
-    db.delete(file)
-    db.commit()
-
-    await log_action_async(
-        db, current_user_email, "DELETE FILE", f"Deleted {file.filename}"
-    )
-
-    return {
-        "detail": "File deleted successfully",
-        "data": {"filename": file.filename},
-    }
-
-
-class ShareFileIn(BaseModel):
-    email: str
-
-
-@router.post("/{file_id}/share", response_model=SuccessResponse)
-async def share_file(
-    file_id: str,
-    payload: ShareFileIn,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    file = db.query(File).filter(File.id == file_id).first()
-    if not file:
+    result = await db.execute(
+        select(File).where(File.id == file_id, File.owner_id == current_user.id)
+    )
+    f: Any = result.scalar_one_or_none()
+    if not f:
         raise HTTPException(status_code=404, detail="File not found")
-    if file.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only owner can share file")
-
-    current_user_email = decrypt_email(current_user.email_enc)
-
-    email = payload.email.lower()
-
-    if current_user_email == email:
-        raise HTTPException(status_code=400, detail="Cannot share with yourself")
-
-    recipient_email_hash = hash_email(email)
-
-    recipient = db.query(User).filter(User.email_hash == recipient_email_hash).first()
-
-    if not recipient:  # then create a new user
-        recipient = User(
-            email_hash=recipient_email_hash,
-            email_enc=encrypt_email(email),
-        )
-        db.add(recipient)
-        db.commit()
-        db.refresh(recipient)
-
-    existing_share = (
-        db.query(FileShare)
-        .filter(
-            FileShare.file_id == file.id,
-            FileShare.shared_with_email == recipient.email_enc,
-        )
-        .first()
-    )
-
-    if existing_share:
-        return {
-            "detail": "File already shared with this user",
-            "data": {"file_id": file_id},
-        }
-
-    share = FileShare(file_id=file.id, shared_with_email=recipient.email_enc)
-    db.add(share)
-    db.commit()
-
-    await log_action_async(
-        db,
-        current_user_email,
-        "SHARE FILE",
-        f"Shared {file.filename} with {email.lower()}",
-    )
-
-    return {
-        "detail": f"File shared with {email.lower()}",
-        "data": {"file_id": file_id},
-    }
-
-
-class UnshareFileIn(BaseModel):
-    email: str
-
-
-@router.delete("/{file_id}/share", response_model=SuccessResponse)
-async def unshare_file(
-    file_id: str,
-    payload: UnshareFileIn,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    file = db.query(File).filter(File.id == file_id).first()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
-    if file.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only owner can unshare file")
-
-    current_user_email = decrypt_email(current_user.email_enc)
-
-    recipient_email = payload.email.lower()
-    recipient_email_hash = hash_email(recipient_email)
-    recipient = db.query(User).filter(User.email_hash == recipient_email_hash).first()
-    if not recipient:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    share = (
-        db.query(FileShare)
-        .filter(
-            FileShare.file_id == file.id,
-            FileShare.shared_with_email == recipient.email_enc,
-        )
-        .first()
-    )
-
-    if not share:
-        return {
-            "detail": "File not shared with this user",
-            "data": {"file_id": file_id},
-        }
-
-    db.delete(share)
-    db.commit()
-
-    await log_action_async(
-        db,
-        current_user_email,
-        "UNSHARE FILE",
-        f"Unshared {file.filename} with {recipient_email}",
-    )
-
-    return {
-        "detail": f"File unshared with {recipient_email}",
-        "data": {"file_id": file_id},
-    }
+    setattr(f, "deleted", True)
+    await db.commit()
+    return {"deleted": True, "file_id": str(getattr(f, "id"))}

@@ -1,16 +1,40 @@
-from fastapi import APIRouter, FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
-from app.core.config import Settings
-from app.routes import auth, files
+from app.config import settings
+from app.db import AsyncSessionLocal, Base, engine
+from app.routes import auth, files, search, shares
 
-settings = Settings()
 
-app = FastAPI(title="VaultX - Simple, Secure, Searchable File Storage", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        if settings.app_env == "dev":
+            await conn.run_sync(Base.metadata.create_all)
+            print("🗄️  Database tables checked/created (dev mode).")
+        else:
+            await conn.run_sync(lambda _: None)
+    print("✅ Database connected successfully.")
 
-origins = allow_origins = (
-    ["*"] if settings.APP_ENV == "dev" else [settings.PROD_FRONTEND_DOMAIN]
+    yield
+
+    await engine.dispose()
+    print("🧹 Database connection closed.")
+
+
+app = FastAPI(
+    title="VaultX Backend",
+    version="0.1",
+    lifespan=lifespan,
 )
+
+if settings.app_env == "dev":
+    origins = [settings.dev_frontend_url]
+else:
+    origins = [settings.prod_frontend_url]
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,21 +44,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-v1_router = APIRouter(prefix="/v1")
-
-v1_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
-v1_router.include_router(files.router, prefix="/files", tags=["Files"])
-
-api_router = APIRouter(prefix="/api")
-api_router.include_router(v1_router)
-
-app.include_router(api_router)
+app.include_router(auth.router)
+app.include_router(files.router)
+app.include_router(search.router)
+app.include_router(shares.router)
 
 
-@v1_router.get("/", tags=["Status"])
-async def status():
-    return {"detail": "VaultX is running!"}
+@app.get("/health")
+async def health():
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        db_status = "ok"
+    except Exception as e:
+        print(f"❌ Database connection error: {e}")
+        db_status = "unreachable"
 
-
-# TODO: Add Rate Limiting
-# TODO Add Admin accounts and endpoints
+    return {
+        "status": "ok",
+        "database": db_status,
+        "environment": settings.app_env,
+    }

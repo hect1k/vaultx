@@ -1,142 +1,83 @@
-from datetime import datetime, timezone
+import base64
 
-import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings
-from app.db.database import get_db
-from app.models.models import SuccessResponse, User
-from app.services import auth_service, email_service
-from app.utils.crypto import encrypt_email, hash_email, hmac_compare
-from app.utils.logging import log_action_async
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
+from app.db import get_db
+from app.models import User
+from app.schemas import TokenResponse, UserCreate, UserLogin
 
-settings = Settings()
-router = APIRouter()
-
-
-class RequestTokenIn(BaseModel):
-    email: str
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/request", response_model=SuccessResponse)
-async def request_token(payload: RequestTokenIn, db: Session = Depends(get_db)):
-    email = payload.email.lower()
-    hashed_email = hash_email(email)
-
-    user = db.query(User).filter(User.email_hash == hashed_email).first()
-    if not user:
-        user = User(email_hash=hashed_email, email_enc=encrypt_email(email))
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    magic = auth_service.gen_magic_token()
-    hashed = auth_service.hash_token(magic)
-    user.hashed_token = hashed
-    user.token_created_at = datetime.now(timezone.utc)
-    db.add(user)
-    db.commit()
-
-    await log_action_async(db, email, "AUTH", "Requested Magic Token")
-
-    # NOTE: Comment this out for sending actual mails
-    return {
-        "detail": "Magic token generated",
-        "data": {"token": magic, "email": email},
-    }
+@router.post("/register", response_model=TokenResponse)
+async def register_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
+    q = await db.execute(select(User).where(User.email == payload.email))
+    existing = q.scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
     try:
-        await email_service.send_magic_link(email, magic)
-        return {
-            "detail": "Magic link sent via email!",
-            "data": {"email": email},
-        }
-
-    except Exception as e:
-        print("ERROR SENDING MAGIC LINK: ", e)
-        raise HTTPException(status_code=500, detail="Failed to send magic link")
-
-
-class ConsumeTokenIn(BaseModel):
-    email: str
-    token: str
-
-
-@router.post("/consume", response_model=dict)
-async def consume_token(payload: ConsumeTokenIn, db: Session = Depends(get_db)):
-    email = payload.email.lower()
-    hashed_email = hash_email(email)
-
-    user = db.query(User).filter(User.email_hash == hashed_email).first()
-    if not user or not user.hashed_token:
-        raise HTTPException(status_code=400, detail="Invalid token or email")
-
-    if auth_service.token_is_expired(user.token_created_at):
-        user.hashed_token = None
-        user.token_created_at = None
-        db.add(user)
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Token expired"
-        )
-
-    provided_hash = auth_service.hash_token(payload.token)
-    if not hmac_compare(provided_hash, user.hashed_token):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token"
-        )
-
-    access_token = auth_service.create_access_token(sub=user.id)
-    refresh_token = auth_service.create_refresh_token(sub=user.id)
-
-    user.hashed_token = None
-    user.token_created_at = None
-    db.add(user)
-    db.commit()
-
-    await log_action_async(db, email, "AUTH", "Consumed Magic Token")
-
-    return {
-        "detail": "Magic token consumed",
-        "data": {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-        },
-    }
-
-
-@router.post("/refresh", response_model=SuccessResponse)
-async def refresh_token(
-    authorization: str = Header(..., alias="Authorization"),
-    db: Session = Depends(get_db),
-):
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401, detail="Missing or invalid Authorization header"
-        )
-
-    refresh_token = authorization.split(" ")[1]
-
-    try:
-        data = auth_service.decode_jwt(refresh_token)
-        if data.get("type") != "refresh":
-            raise HTTPException(status_code=400, detail="Invalid token type")
-
-        sub = data.get("sub")
-        new_access = auth_service.create_access_token(sub=sub)
-
-        await log_action_async(db, sub, "AUTH", "Refreshed token")
-
-        return {
-            "detail": "Token refreshed",
-            "data": {"access_token": new_access, "token_type": "bearer"},
-        }
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Refresh token expired")
-
+        public_key = base64.b64decode(payload.public_key_b64)
+        encrypted_private_key = base64.b64decode(payload.encrypted_private_key_b64)
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=400, detail="Invalid key encoding")
+
+    user = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        public_key=public_key,
+        encrypted_private_key=encrypted_private_key,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    access = create_access_token({"sub": str(user.id)})
+    refresh = create_refresh_token({"sub": str(user.id)})
+
+    return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == user_in.email))
+    user = result.scalar_one_or_none()
+    if not user or not verify_password(user_in.password, str(user.password_hash)):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
+    access = create_access_token({"sub": str(user.id)})
+    refresh = create_refresh_token({"sub": str(user.id)})
+    return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(refresh_token: str):
+    try:
+        payload = decode_token(refresh_token)
+        if payload.get("type") != "refresh":
+            raise ValueError("Not a refresh token")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    user_id = payload.get("sub")
+    access = create_access_token({"sub": user_id})
+    new_refresh = create_refresh_token({"sub": user_id})
+    return TokenResponse(access_token=access, refresh_token=new_refresh)
+
+
+@router.get("/public-key/{email}")
+async def get_public_key(email: str, db: AsyncSession = Depends(get_db)):
+    q = await db.execute(select(User.public_key).where(User.email == email))
+    key = q.scalar_one_or_none()
+    if not key:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"public_key_b64": base64.b64encode(bytes(key)).decode()}
