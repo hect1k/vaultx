@@ -194,8 +194,6 @@ export function FileManager() {
           }
         }
 
-        console.log("Decrypted file IDs:", decryptedIds);
-
         // Step 3: call /files/batch with the decrypted file IDs
         const batchRes = await api.post(
           "/files/batch",
