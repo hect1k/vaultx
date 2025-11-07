@@ -42,9 +42,9 @@ export function FileList({
   return (
     <div className="p-6">
       <div className="grid grid-cols-12 gap-4 pb-3 border-b border-border text-sm font-medium text-muted-foreground">
-        <div className="col-span-6">Name</div>
-        <div className="col-span-2">Owner</div>
-        <div className="col-span-2">Uploaded at</div>
+        <div className="col-span-4">Name</div>
+        <div className="col-span-3">Owner</div>
+        <div className="col-span-3">Uploaded at</div>
         <div className="col-span-1">Size</div>
       </div>
 
@@ -53,7 +53,7 @@ export function FileList({
           <DropdownMenu key={file.id}>
             <DropdownMenuTrigger asChild>
               <div className="grid grid-cols-12 gap-4 py-3 px-2 rounded-lg hover:bg-muted/50 transition-colors group cursor-pointer">
-                <div className="col-span-6 flex items-center space-x-3">
+                <div className="col-span-4 flex items-center space-x-3">
                   <FileIcon
                     fileType={file.fileType}
                     className="w-6 h-6 flex-shrink-0"
@@ -80,11 +80,11 @@ export function FileList({
                   </div>
                 </div>
 
-                <div className="col-span-2 flex items-center text-sm text-muted-foreground">
+                <div className="col-span-3 flex items-center text-sm text-muted-foreground">
                   {file.owner}
                 </div>
 
-                <div className="col-span-2 flex items-center text-sm text-muted-foreground">
+                <div className="col-span-3 flex items-center text-sm text-muted-foreground">
                   {file.modified}
                 </div>
 
