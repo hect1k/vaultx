@@ -226,8 +226,27 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
     }
   };
 
+  const inferKeywordsFromType = (type: string): string[] => {
+    if (!type) return [];
+
+    const [category, extension] = type.split("/");
+    const result = new Set<string>();
+
+    if (category) result.add(category.toLowerCase());
+    if (extension) result.add(extension.toLowerCase());
+
+    if (category === "image") result.add("photo");
+    if (category === "video") result.add("media");
+    if (category === "application") {
+      if (extension.includes("pdf")) result.add("pdf");
+      if (extension.includes("zip")) result.add("archive");
+    }
+
+    return Array.from(result);
+  };
+
   const handleDone = async () => {
-    if (uploadFiles.length === 0 || globalKeywords.length === 0) return;
+    if (uploadFiles.length === 0) return;
 
     const token = localStorage.getItem("vaultx_access_token");
     const masterKey_b64 = sessionStorage.getItem("vaultx_master_key");
@@ -242,7 +261,9 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         sessionStorage.getItem("vaultx_keyword_chain") || "{}"
       );
 
-      const masterKeyBytes = Uint8Array.from(atob(masterKey_b64), (c) => c.charCodeAt(0));
+      const masterKeyBytes = Uint8Array.from(atob(masterKey_b64), (c) =>
+        c.charCodeAt(0)
+      );
       const masterKey = await crypto.subtle.importKey(
         "raw",
         masterKeyBytes,
@@ -259,7 +280,9 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         );
 
         const fileKey_b64 = await generateFileKey();
-        const fileKeyBytes = Uint8Array.from(atob(fileKey_b64), (c) => c.charCodeAt(0));
+        const fileKeyBytes = Uint8Array.from(atob(fileKey_b64), (c) =>
+          c.charCodeAt(0)
+        );
         const fileKey = await crypto.subtle.importKey(
           "raw",
           fileKeyBytes,
@@ -286,12 +309,16 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
           type: item.file.type,
           keywords: allKeywords,
         });
+
         const metadataEnc = await aesEncryptArrayBuffer(
           new TextEncoder().encode(metadata).buffer,
           fileKey
         );
 
-        const kfEnc = await aesEncryptArrayBuffer(fileKeyBytes.buffer, masterKey);
+        const kfEnc = await aesEncryptArrayBuffer(
+          fileKeyBytes.buffer,
+          masterKey
+        );
 
         const searchKey_b64 = sessionStorage.getItem("vaultx_search_key");
         if (!searchKey_b64) {
@@ -318,10 +345,8 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         });
 
         const tokens_json = JSON.stringify(tokens);
-
-        const fileCtBytes = Uint8Array.from(
-          atob(fileEnc.ciphertext_b64),
-          (c) => c.charCodeAt(0)
+        const fileCtBytes = Uint8Array.from(atob(fileEnc.ciphertext_b64), (c) =>
+          c.charCodeAt(0)
         );
 
         const formData = new FormData();
@@ -353,7 +378,10 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         },
         token
       );
-      sessionStorage.setItem("vaultx_keyword_chain", JSON.stringify(keywordChains));
+      sessionStorage.setItem(
+        "vaultx_keyword_chain",
+        JSON.stringify(keywordChains)
+      );
 
       window.location.reload();
     } catch (err: any) {
@@ -385,7 +413,11 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
     );
 
   const formatSize = (b: number) =>
-    b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(2)} KB` : `${(b / 1024 / 1024).toFixed(2)} MB`;
+    b < 1024
+      ? `${b} B`
+      : b < 1024 * 1024
+      ? `${(b / 1024).toFixed(2)} KB`
+      : `${(b / 1024 / 1024).toFixed(2)} MB`;
 
   return (
     <Dialog open={open} onOpenChange={closeModal}>
@@ -404,7 +436,12 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
           <Button variant="outline" asChild>
             <label className="cursor-pointer">
               Select files
-              <input type="file" multiple className="hidden" onChange={handleFileSelect} />
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={handleFileSelect}
+              />
             </label>
           </Button>
         </div>
@@ -419,7 +456,10 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
               placeholder="Add keyword"
               className="flex-1 border rounded px-2 py-1 text-sm"
             />
-            <Button onClick={handleAddKeyword} disabled={!currentKeyword.trim()}>
+            <Button
+              onClick={handleAddKeyword}
+              disabled={!currentKeyword.trim()}
+            >
               Add
             </Button>
           </div>
@@ -483,12 +523,16 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         )}
 
         <div className="flex justify-end space-x-2 pt-4 border-t border-border">
-          <Button variant="outline" onClick={() => closeModal(false)} disabled={isUploading}>
+          <Button
+            variant="outline"
+            onClick={() => closeModal(false)}
+            disabled={isUploading}
+          >
             Cancel
           </Button>
           <Button
             onClick={handleDone}
-            disabled={isUploading || uploadFiles.length === 0 || globalKeywords.length === 0}
+            disabled={isUploading || uploadFiles.length === 0}
           >
             {isUploading ? "Uploading..." : "Done"}
           </Button>
