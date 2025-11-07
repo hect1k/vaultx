@@ -16,6 +16,8 @@ import { bufToB64, genRandomBytes } from "@/lib/crypto/base";
 import { api } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";
 import { clearVaultXContext } from "@/lib/crypto/context";
+import * as XLSX from "xlsx";
+import mammoth from "mammoth";
 
 interface UploadFile {
   id: string;
@@ -23,12 +25,119 @@ interface UploadFile {
   progress: number;
   status: "pending" | "uploading" | "completed" | "error";
   errorMessage?: string;
+  selectedKeywords?: string[];
+  autoKeywords?: string[];
 }
 
 interface UploadModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUploadSuccess?: () => void;
+}
+
+async function extractKeywordsFromFile(file: File): Promise<string[]> {
+  const nameKeywords = file.name
+    .replace(/\.[^/.]+$/, "")
+    .split(/[\s\-_]+/)
+    .map((k) => k.toLowerCase())
+    .filter((k) => k.length > 2);
+
+  const typeKeywords = getTypeKeywords(file.type, file.name);
+  const contentText = await readFileContent(file);
+  const contentKeywords = getTopKeywords(contentText, 4);
+
+  const combined = new Set([...nameKeywords, ...typeKeywords, ...contentKeywords]);
+  return Array.from(combined).slice(0, 6);
+}
+
+function getTypeKeywords(type: string, name: string): string[] {
+  const lower = name.toLowerCase();
+  if (type.startsWith("text/")) return ["text", "document"];
+  if (type.startsWith("image/")) return ["image", "photo"];
+  if (type.startsWith("video/")) return ["video", "media"];
+  if (type === "application/pdf" || lower.endsWith(".pdf")) return ["pdf", "document"];
+  if (lower.endsWith(".docx")) return ["word", "document"];
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return ["excel", "spreadsheet"];
+  if (lower.endsWith(".csv")) return ["csv", "data"];
+  if (lower.endsWith(".pptx")) return ["presentation", "slides"];
+  if (lower.endsWith(".zip") || lower.endsWith(".tar") || lower.endsWith(".gz")) return ["archive"];
+  return [];
+}
+
+async function readFileContent(file: File): Promise<string> {
+  const lower = file.name.toLowerCase();
+
+  try {
+    if (file.type.startsWith("text/") || lower.endsWith(".json") || lower.endsWith(".csv")) {
+      return await file.text();
+    }
+
+    // PDF files
+    if (file.type === "application/pdf" || lower.endsWith(".pdf")) {
+      const pdfjsLib = await import("pdfjs-dist/webpack");
+      (pdfjsLib as any).GlobalWorkerOptions.workerSrc =
+        "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs";
+
+      const pdf = await (pdfjsLib as any)
+        .getDocument({ data: await file.arrayBuffer() })
+        .promise;
+
+      let text = "";
+      const maxPages = Math.min(pdf.numPages, 3);
+      for (let i = 1; i <= maxPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map((i: any) => i.str).join(" ");
+      }
+      return text;
+    }
+
+    // DOCX
+    if (lower.endsWith(".docx")) {
+      const buffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+      return result.value || "";
+    }
+
+    // Excel
+    if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const text = workbook.SheetNames.map(
+        (sheet) => XLSX.utils.sheet_to_csv(workbook.Sheets[sheet])
+      ).join(" ");
+      return text;
+    }
+
+    return ""; // unsupported format
+  } catch {
+    return "";
+  }
+}
+
+function getTopKeywords(text: string, max: number): string[] {
+  if (!text) return [];
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+
+  const freq: Record<string, number> = {};
+  for (const w of words) freq[w] = (freq[w] || 0) + 1;
+
+  const stopWords = new Set([
+    "this", "that", "from", "with", "have", "were", "there", "their", "which", "about",
+    "would", "could", "your", "when", "where", "what", "will", "then", "them", "they",
+    "been", "into", "some", "more", "than", "just", "also", "very", "and", "for", "not",
+    "are", "was", "the", "you", "but", "all", "can"
+  ]);
+
+  return Object.entries(freq)
+    .filter(([w]) => !stopWords.has(w))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max)
+    .map(([w]) => w);
 }
 
 export function UploadModal({ open, onOpenChange }: UploadModalProps) {
@@ -56,10 +165,38 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
     addFiles(Array.from(e.dataTransfer.files));
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    addFiles(Array.from(e.target.files || []));
-    e.target.value = "";
-  };
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    const newFiles = await Promise.all(
+      files.map(async (file) => {
+        const autoKeywords = await extractKeywordsFromFile(file);
+        return {
+          id: crypto.randomUUID(),
+          file,
+          autoKeywords,
+          selectedKeywords: [...autoKeywords],
+          status: "pending",
+          progress: 0,
+        };
+      })
+    );
+
+    setUploadFiles((prev) => [...prev, ...newFiles]);
+  }
+
+  function handleToggleKeyword(fileId: string, kw: string) {
+    setUploadFiles((prev) =>
+      prev.map((f) => {
+        if (f.id !== fileId) return f;
+        const exists = f.selectedKeywords?.includes(kw);
+        const updated = exists
+          ? f.selectedKeywords?.filter((k) => k !== kw)
+          : [...(f.selectedKeywords || []), kw];
+        return { ...f, selectedKeywords: updated };
+      })
+    );
+  }
+
 
   const addFiles = (files: File[]) => {
     const newFiles = files.map((file) => ({
@@ -157,16 +294,20 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         const fileBuffer = await item.file.arrayBuffer();
         const fileEnc = await aesEncryptArrayBuffer(fileBuffer, fileKey);
 
-        const inferred = inferKeywordsFromType(item.file.type);
-        const finalKeywords = Array.from(
-          new Set([...globalKeywords, ...inferred])
-        );
+        const allKeywords = [
+          ...new Set([
+            ...globalKeywords,
+            ...(item.selectedKeywords?.length
+              ? item.selectedKeywords
+              : item.autoKeywords || []),
+          ]),
+        ];
 
         const metadata = JSON.stringify({
           name: item.file.name,
           size: item.file.size,
           type: item.file.type,
-          keywords: finalKeywords,
+          keywords: allKeywords,
         });
 
         const metadataEnc = await aesEncryptArrayBuffer(
@@ -188,7 +329,7 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
         }
         const encFileId = await encryptStringWithAes(item.id, searchKey_b64);
 
-        const tokens = finalKeywords.map((kw) => {
+        const tokens = allKeywords.map((kw) => {
           const tokenBytes = genRandomBytes(16);
           const prev_token = keywordChains[kw] || null;
           const obj = {
@@ -345,25 +486,37 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
             {uploadFiles.map((f) => (
               <div
                 key={f.id}
-                className="flex items-center justify-between bg-muted/50 p-3 rounded-md"
+                className="flex justify-between bg-muted/50 p-3 rounded-md"
               >
                 <div className="flex-1 truncate text-sm">
                   <p className="font-medium truncate">{f.file.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatSize(f.file.size)}
-                  </p>
+                  <p className="text-xs text-muted-foreground">{formatSize(f.file.size)}</p>
+
+                  <div className="flex flex-col space-x-2 mt-2">
+                    <span className="text-xs text-muted-foreground">Suggested Keywords (click to remove/toggle):</span>
+                    {f.autoKeywords?.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {f.autoKeywords?.map((kw) => {
+                          const selected = f.selectedKeywords?.includes(kw);
+                          return (
+                            <span
+                              key={kw}
+                              onClick={() => handleToggleKeyword(f.id, kw)}
+                              className={`cursor-pointer px-2 py-1 rounded text-sm ${selected ? "bg-white/80 text-black" : "bg-secondary"
+                                }`}
+                            >
+                              {kw}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  {icon(f.status)}
-                  <Progress value={f.progress} className="w-24 h-2" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeFile(f.id)}
-                  >
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </Button>
-                </div>
+
+                <Button variant="ghost" size="sm" onClick={() => removeFile(f.id)} className="bg-red-800/50 hover:bg-red-800 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </Button>
               </div>
             ))}
           </div>

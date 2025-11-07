@@ -34,7 +34,7 @@ export const api = {
       if (error instanceof TypeError || (error as Error).message === "Failed to fetch") {
         throw new NetworkError("Server unreachable. Please try again later.");
       }
-      throw new Error("Something went wrong.");
+      throw error
     }
   },
 
@@ -61,7 +61,7 @@ export const api = {
       if (error instanceof TypeError || (error as Error).message === "Failed to fetch") {
         throw new NetworkError("Server unreachable. Please try again later.");
       }
-      throw new Error("Something went wrong.");
+      throw error
     }
   },
 };
