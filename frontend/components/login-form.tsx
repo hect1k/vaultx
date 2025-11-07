@@ -88,6 +88,7 @@ export function LoginForm() {
         sessionStorage.setItem("vaultx_search_key", searchKey_b64)
         sessionStorage.setItem("vaultx_private_key", privateKey_b64)
         sessionStorage.setItem("vaultx_public_key", keys.public_key_b64)
+        sessionStorage.setItem("vaultx_user_email", email)
 
         const chainData = await api.get("/user/index_state", accessToken);
         if (chainData?.index_state_ciphertext) {
@@ -141,6 +142,7 @@ export function LoginForm() {
         sessionStorage.setItem("vaultx_search_key", searchKey_b64)
         sessionStorage.setItem("vaultx_private_key", privateKey_b64)
         sessionStorage.setItem("vaultx_public_key", keys.public_key_b64)
+        sessionStorage.setItem("vaultx_user_email", email)
 
         const chainData = await api.get("/user/index_state", accessToken);
         if (chainData?.index_state_ciphertext) {
