@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeSearch, setActiveSearch] = useState<string | null>(null); // ✅ currently active search term
+  const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
   const { theme, setTheme } = useTheme();
 
@@ -30,15 +30,15 @@ export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    inputRef.current?.blur();
     onSearch?.(searchQuery.trim());
-    setActiveSearch(searchQuery.trim()); // ✅ show search chip
-    setSearchQuery(""); // clear field
+    setSearchQuery(searchQuery.trim());
   };
 
   const clearSearch = () => {
-    setActiveSearch(null);
-    onSearch?.(""); // ✅ fetch all files again
+    inputRef.current?.blur();
+    setSearchQuery("");
+    onSearch?.("");
   };
 
   useEffect(() => {
@@ -79,11 +79,11 @@ export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
             </span>
           </div>
 
-          {/* Center (Search + Active Chip) */}
           <div className="flex-1 max-w-2xl mx-8 flex items-center space-x-3">
             <form onSubmit={handleSearchSubmit} className="relative flex-1">
+              {/* Search icon */}
               <svg
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -95,21 +95,22 @@ export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
               </svg>
+
+              {/* Input field */}
               <Input
-                placeholder="Search in Drive"
+                ref={inputRef}
+                placeholder="Search Vault"
                 value={searchQuery}
                 onChange={handleSearchChange}
                 className="pl-10 pr-10 h-10 bg-muted/50 border-border focus:bg-background"
               />
-            </form>
 
-            {/* ✅ Active Search Chip */}
-            {activeSearch && (
-              <div className="flex items-center space-x-2 bg-muted px-3 py-1.5 rounded-full text-sm text-foreground">
-                <span>{activeSearch}</span>
+              {/* Clear button (shows only when there’s text) */}
+              {searchQuery && (
                 <button
+                  type="button"
                   onClick={clearSearch}
-                  className="hover:text-destructive transition-colors"
+                  className="absolute right-3 cursor-pointer top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   <svg
                     className="w-4 h-4"
@@ -118,15 +119,11 @@ export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
                     strokeWidth="2"
                     viewBox="0 0 24 24"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
-              </div>
-            )}
+              )}
+            </form>
           </div>
 
           {/* Right Section (Actions) */}

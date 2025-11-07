@@ -8,7 +8,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { X, CheckCircle, UploadCloud, AlertTriangle } from "lucide-react";
 import { aesEncryptArrayBuffer, encryptStringWithAes } from "@/lib/crypto/aes";
 import { generateFileKey } from "@/lib/crypto/keys";
@@ -416,8 +415,10 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
     b < 1024
       ? `${b} B`
       : b < 1024 * 1024
-      ? `${(b / 1024).toFixed(2)} KB`
-      : `${(b / 1024 / 1024).toFixed(2)} MB`;
+        ? `${(b / 1024).toFixed(2)} KB`
+        : b < 1024 * 1024 * 1024
+          ? `${(b / 1024 / 1024).toFixed(2)} MB`
+          : `${(b / 1024 / 1024 / 1024).toFixed(2)} GB`;
 
   return (
     <Dialog open={open} onOpenChange={closeModal}>
@@ -472,7 +473,7 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
                 {kw}
                 <button
                   onClick={() => handleRemoveKeyword(kw)}
-                  className="ml-1.5 hover:bg-secondary/80 rounded-full p-0.5"
+                  className="ml-1.5 hover:bg-secondary/80 cursor-pointer rounded-full p-0.5"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -514,7 +515,7 @@ export function UploadModal({ open, onOpenChange }: UploadModalProps) {
                   </div>
                 </div>
 
-                <Button variant="ghost" size="sm" onClick={() => removeFile(f.id)} className="bg-red-800/50 hover:bg-red-800 cursor-pointer">
+                <Button variant="ghost" size="sm" onClick={() => removeFile(f.id)} className="hover:bg-red-500/50 dark:hover:bg-red-500/50 cursor-pointer">
                   <X className="w-4 h-4" />
                 </Button>
               </div>

@@ -28,7 +28,7 @@ interface FileItem {
 }
 
 export function FileManager() {
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFileId, setShareFileId] = useState<string | null>(null);

@@ -32,22 +32,12 @@ export function FileList({
   onDownloadFile,
   onDeleteFile,
 }: FileListProps) {
-  const formatFileSize = (sizeString: string) => {
-    const numeric = parseFloat(sizeString.replace(/[^\d.]/g, ""));
-    if (isNaN(numeric)) return sizeString;
-
-    const bytes = sizeString.toLowerCase().includes("mb")
-      ? numeric * 1024 * 1024
-      : sizeString.toLowerCase().includes("kb")
-      ? numeric * 1024
-      : numeric;
-
-    if (bytes < 1024) return `${bytes.toFixed(2)} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  };
+  const formatSize = (b: number) =>
+    b < 1024
+      ? `${b} KB`
+      : b < 1024 * 1024
+        ? `${(b / 1024).toFixed(2)} MB`
+        : `${(b / 1024 / 1024).toFixed(2)} GB`;
 
   return (
     <div className="p-6">
@@ -100,7 +90,7 @@ export function FileList({
                 </div>
 
                 <div className="col-span-1 flex items-center text-sm text-muted-foreground">
-                  {formatFileSize(file.size)}
+                  {formatSize(parseFloat(file.size))}
                 </div>
               </div>
             </DropdownMenuTrigger>
