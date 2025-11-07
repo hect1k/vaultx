@@ -12,6 +12,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
@@ -154,6 +155,7 @@ class IndexEntry(Base):
 
 class TamperLog(Base):
     __tablename__ = "tamper_log"
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(
         PG_UUID(as_uuid=True),
@@ -163,5 +165,8 @@ class TamperLog(Base):
     )
     entry_json = Column(JSON, nullable=False)
     entry_hash = Column(String, nullable=False, index=True)
+    prev_hash = Column(String, nullable=True, index=True)
+    signature = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.now, nullable=False)
+
     __table_args__ = (Index("idx_tamper_user_created", "user_id", "created_at"),)

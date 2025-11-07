@@ -1,9 +1,10 @@
 import base64
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_decorator import audit_event
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -68,8 +69,10 @@ async def register_user(payload: RegisterPayload, db: AsyncSession = Depends(get
 
 
 @router.post("/login", response_model=AuthResponse)
+@audit_event("login")
 async def login_user(
     user_in: UserLogin,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     user_result = await db.execute(select(User).where(User.email == user_in.email))
@@ -116,8 +119,8 @@ async def refresh(refresh_token: str):
 
 @router.get("/public-key/{email}")
 async def get_public_key(email: str, db: AsyncSession = Depends(get_db)):
-    q = await db.execute(select(User.public_key).where(User.email == email))
+    q = await db.execute(select(User.public_key_b64).where(User.email == email))
     key = q.scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"public_key_b64": base64.b64encode(bytes(key)).decode()}
+    return {"public_key": key}

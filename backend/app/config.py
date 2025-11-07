@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     mail_starttls: bool = Field(True, alias="MAIL_STARTTLS")
     mail_ssl_tls: bool = Field(False, alias="MAIL_SSL_TLS")
 
+    # PEM Keys
+    keys_dir: str = Field(..., alias="KEYS_DIR")
+    fallback_keys_dir: str = Field(..., alias="FALLBACK_KEYS_DIR")
+
     # Frontend
     dev_frontend_url: str = Field("http://localhost:3000", alias="DEV_FRONTEND_URL")
     prod_frontend_url: str = Field("https://vaultx.in", alias="PROD_FRONTEND_URL")

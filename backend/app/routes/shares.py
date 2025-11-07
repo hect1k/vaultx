@@ -1,10 +1,11 @@
 import base64
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_decorator import audit_event
 from app.core.deps import get_current_user
 from app.db import get_db
 from app.models import File, FileShare, User
@@ -14,7 +15,9 @@ router = APIRouter(prefix="/shares", tags=["shares"])
 
 
 @router.post("", response_model=FileShareRead)
+@audit_event("file_shared")
 async def share_file(
+    request: Request,
     payload: FileShareCreate,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
