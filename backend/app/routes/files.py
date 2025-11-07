@@ -1,7 +1,6 @@
 import base64
 import json
 import uuid
-from typing import Any, List
 
 from fastapi import APIRouter, Depends
 from fastapi import File as FastAPIFile
@@ -12,17 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user
 from app.db import get_db
 from app.models import File, FileShare, IndexEntry, User
-from app.schemas import (
-    FileBatchList,
-    FileDownloadResponse,
-    FileListItem,
-    FileUploadResponse,
-    SharedUser,
-)
+from app.schemas import FileBatchList, FileUploadResponse
 
 router = APIRouter(prefix="/files", tags=["files"])
 
 
+# ----------------------------
+# Upload new file
+# ----------------------------
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(
     file_id: str = Form(...),
@@ -45,6 +41,8 @@ async def upload_file(
     if existing:
         raise HTTPException(status_code=409, detail="File ID already exists")
 
+    file_bytes = await file.read()
+
     try:
         data = await file.read()
         encrypted_kf = base64.b64decode(encrypted_kf_b64)
@@ -53,7 +51,7 @@ async def upload_file(
         encrypted_kf_iv_b = base64.b64decode(encrypted_kf_iv)
         file_iv_b = base64.b64decode(file_iv)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid base64 input")
+        raise HTTPException(status_code=400, detail="Invalid base64 payload")
 
     new_file = File(
         id=file_uuid,
@@ -94,6 +92,9 @@ async def upload_file(
     )
 
 
+# ----------------------------
+# List all files (owned + shared)
+# ----------------------------
 @router.get("", response_model=dict)
 async def list_files(
     db: AsyncSession = Depends(get_db),
@@ -108,16 +109,18 @@ async def list_files(
     )
     total = total_query.scalar_one()
 
-    result = await db.execute(
+    # Owned files
+    owned_q = await db.execute(
         select(File, User.email)
         .join(User, File.owner_id == User.id)
         .where(File.owner_id == current_user.id, File.deleted.is_(False))
         .limit(limit)
         .offset(offset)
     )
-    owned_files = result.all()
+    owned_files = owned_q.all()
 
-    shared_result = await db.execute(
+    # Shared files
+    shared_q = await db.execute(
         select(File, User.email, FileShare)
         .join(User, File.owner_id == User.id)
         .join(FileShare, FileShare.file_id == File.id)
@@ -125,40 +128,53 @@ async def list_files(
         .limit(limit)
         .offset(offset)
     )
-    shared_files = shared_result.all()
+    shared_files = shared_q.all()
 
-    out: List[FileListItem] = []
+    out = []
 
+    # Owned
     for f, owner_email in owned_files:
         shared_entries = await db.execute(
             select(User.email)
             .join(FileShare, FileShare.recipient_user_id == User.id)
             .where(FileShare.file_id == f.id)
         )
-        shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
+        shared_emails = [row[0] for row in shared_entries.all()]
+
         out.append(
-            FileListItem(
-                id=f.id,
-                owner_email=owner_email,
-                metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
-                metadata_iv=base64.b64encode(f.metadata_iv).decode(),
-                created_at=f.created_at,
-                deleted=bool(f.deleted),
-                shared_with=shared_emails,
-            )
+            {
+                "id": str(f.id),
+                "owner_email": owner_email,
+                "metadata_ciphertext": base64.b64encode(
+                    f.metadata_ciphertext or b""
+                ).decode(),
+                "metadata_iv": base64.b64encode(f.metadata_iv or b"").decode(),
+                "encrypted_kf_b64": base64.b64encode(f.encrypted_kf or b"").decode(),
+                "encrypted_kf_iv": base64.b64encode(f.encrypted_kf_iv or b"").decode(),
+                "wrapped_key_b64": None,
+                "created_at": f.created_at,
+                "deleted": bool(f.deleted),
+                "shared_with": shared_emails,
+            }
         )
 
-    for f, owner_email, _ in shared_files:
+    # Shared
+    for f, owner_email, share in shared_files:
         out.append(
-            FileListItem(
-                id=f.id,
-                owner_email=owner_email,
-                metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
-                metadata_iv=base64.b64encode(f.metadata_iv).decode(),
-                created_at=f.created_at,
-                deleted=bool(f.deleted),
-                shared_with=[],
-            )
+            {
+                "id": str(f.id),
+                "owner_email": owner_email,
+                "metadata_ciphertext": base64.b64encode(
+                    f.metadata_ciphertext or b""
+                ).decode(),
+                "metadata_iv": base64.b64encode(f.metadata_iv or b"").decode(),
+                "encrypted_kf_b64": None,
+                "encrypted_kf_iv": None,
+                "wrapped_key_b64": base64.b64encode(share.wrapped_key or b"").decode(),
+                "created_at": f.created_at,
+                "deleted": bool(f.deleted),
+                "shared_with": [],
+            }
         )
 
     return {
@@ -170,13 +186,75 @@ async def list_files(
     }
 
 
+# ----------------------------
+# Get single file (owned or shared)
+# ----------------------------
+@router.get("/{file_id}", response_model=dict)
+async def get_file(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(File, User.email)
+        .join(User, File.owner_id == User.id)
+        .where(File.id == file_id)
+    )
+    entry = result.first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    f, owner_email = entry
+    encrypted_kf_b64 = None
+    encrypted_kf_iv = None
+    wrapped_key_b64 = None
+
+    if f.owner_id == current_user.id:
+        encrypted_kf_b64 = base64.b64encode(f.encrypted_kf or b"").decode()
+        encrypted_kf_iv = base64.b64encode(f.encrypted_kf_iv or b"").decode()
+    else:
+        share_check = await db.execute(
+            select(FileShare).where(
+                FileShare.file_id == f.id,
+                FileShare.recipient_user_id == current_user.id,
+            )
+        )
+        share = share_check.scalar_one_or_none()
+        if not share:
+            raise HTTPException(status_code=403, detail="Access denied")
+        wrapped_key_b64 = base64.b64encode(share.wrapped_key or b"").decode()
+
+    shared_emails = []
+    if f.owner_id == current_user.id:
+        shared_entries = await db.execute(
+            select(User.email)
+            .join(FileShare, FileShare.recipient_user_id == User.id)
+            .where(FileShare.file_id == f.id)
+        )
+        shared_emails = [r[0] for r in shared_entries.all()]
+
+    return {
+        "id": str(f.id),
+        "owner_email": owner_email,
+        "metadata_ciphertext": base64.b64encode(f.metadata_ciphertext or b"").decode(),
+        "metadata_iv": base64.b64encode(f.metadata_iv or b"").decode(),
+        "encrypted_kf_b64": encrypted_kf_b64,
+        "encrypted_kf_iv": encrypted_kf_iv,
+        "wrapped_key_b64": wrapped_key_b64,
+        "created_at": f.created_at,
+        "deleted": bool(f.deleted),
+        "shared_with": shared_emails,
+    }
+
+
+# ----------------------------
+# Batch get files
+# ----------------------------
 @router.post("/batch", response_model=dict)
 async def list_files_by_ids(
     payload: FileBatchList,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
 ):
     ids = payload.ids
     if not ids:
@@ -186,44 +264,52 @@ async def list_files_by_ids(
         select(File, User.email)
         .join(User, File.owner_id == User.id)
         .where(File.id.in_(ids), File.deleted.is_(False))
-        .limit(limit)
-        .offset(offset)
     )
     files = result.all()
-    total = len(ids)
-    out: List[FileListItem] = []
 
+    out = []
     for f, owner_email in files:
-        shared_emails = []
+        encrypted_kf_b64 = None
+        encrypted_kf_iv = None
+        wrapped_key_b64 = None
+
         if f.owner_id == current_user.id:
-            shared_entries = await db.execute(
-                select(User.email)
-                .join(FileShare, FileShare.recipient_user_id == User.id)
-                .where(FileShare.file_id == f.id)
+            encrypted_kf_b64 = base64.b64encode(f.encrypted_kf or b"").decode()
+            encrypted_kf_iv = base64.b64encode(f.encrypted_kf_iv or b"").decode()
+        else:
+            share_check = await db.execute(
+                select(FileShare).where(
+                    FileShare.file_id == f.id,
+                    FileShare.recipient_user_id == current_user.id,
+                )
             )
-            shared_emails = [SharedUser(email=e[0]) for e in shared_entries.all()]
+            share = share_check.scalar_one_or_none()
+            if share:
+                wrapped_key_b64 = base64.b64encode(share.wrapped_key or b"").decode()
+
         out.append(
-            FileListItem(
-                id=f.id,
-                owner_email=owner_email,
-                metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
-                metadata_iv=base64.b64encode(f.metadata_iv).decode(),
-                created_at=f.created_at,
-                deleted=bool(f.deleted),
-                shared_with=shared_emails,
-            )
+            {
+                "id": str(f.id),
+                "owner_email": owner_email,
+                "metadata_ciphertext": base64.b64encode(
+                    f.metadata_ciphertext or b""
+                ).decode(),
+                "metadata_iv": base64.b64encode(f.metadata_iv or b"").decode(),
+                "encrypted_kf_b64": encrypted_kf_b64,
+                "encrypted_kf_iv": encrypted_kf_iv,
+                "wrapped_key_b64": wrapped_key_b64,
+                "created_at": f.created_at,
+                "deleted": bool(f.deleted),
+            }
         )
 
-    return {
-        "total": total,
-        "count": len(out),
-        "limit": limit,
-        "offset": offset,
-        "files": out,
-    }
+    return {"count": len(out), "files": out}
 
 
-@router.get("/{file_id}/download", response_model=FileDownloadResponse)
+# ----------------------------
+# Download file (with key info)
+# ----------------------------
+@router.get("/{file_id}/download", response_model=dict)
 async def download_file(
     file_id: str,
     db: AsyncSession = Depends(get_db),
@@ -237,40 +323,35 @@ async def download_file(
     entry = result.first()
     if not entry:
         raise HTTPException(status_code=404, detail="File not found")
+
     f, _ = entry
-    if f.owner_id != current_user.id:
+    encrypted_kf_b64 = None
+    encrypted_kf_iv = None
+    wrapped_key_b64 = None
+
+    if f.owner_id == current_user.id:
+        encrypted_kf_b64 = base64.b64encode(f.encrypted_kf or b"").decode()
+        encrypted_kf_iv = base64.b64encode(f.encrypted_kf_iv or b"").decode()
+    else:
         share_check = await db.execute(
             select(FileShare).where(
                 FileShare.file_id == f.id,
                 FileShare.recipient_user_id == current_user.id,
             )
         )
-        if not share_check.scalar_one_or_none():
+        share = share_check.scalar_one_or_none()
+        if not share:
             raise HTTPException(status_code=403, detail="Access denied")
-    return FileDownloadResponse(
-        id=f.id,
-        ciphertext=base64.b64encode(f.ciphertext).decode(),
-        metadata_ciphertext=base64.b64encode(f.metadata_ciphertext).decode(),
-        metadata_iv=base64.b64encode(f.metadata_iv).decode(),
-        encrypted_kf_b64=base64.b64encode(f.encrypted_kf).decode(),
-        encrypted_kf_iv=base64.b64encode(f.encrypted_kf_iv).decode(),
-        file_iv=base64.b64encode(f.file_iv).decode(),
-        created_at=f.created_at,
-    )
+        wrapped_key_b64 = base64.b64encode(share.wrapped_key or b"").decode()
 
-
-@router.delete("/{file_id}")
-async def delete_file(
-    file_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    result = await db.execute(
-        select(File).where(File.id == file_id, File.owner_id == current_user.id)
-    )
-    f: Any = result.scalar_one_or_none()
-    if not f:
-        raise HTTPException(status_code=404, detail="File not found")
-    f.deleted = True
-    await db.commit()
-    return {"deleted": True, "file_id": str(f.id)}
+    return {
+        "id": str(f.id),
+        "ciphertext": base64.b64encode(f.ciphertext or b"").decode(),
+        "file_iv": base64.b64encode(f.file_iv or b"").decode(),
+        "metadata_ciphertext": base64.b64encode(f.metadata_ciphertext or b"").decode(),
+        "metadata_iv": base64.b64encode(f.metadata_iv or b"").decode(),
+        "encrypted_kf_b64": encrypted_kf_b64,
+        "encrypted_kf_iv": encrypted_kf_iv,
+        "wrapped_key_b64": wrapped_key_b64,
+        "created_at": f.created_at,
+    }

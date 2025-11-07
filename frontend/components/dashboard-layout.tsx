@@ -135,14 +135,7 @@ export function DashboardLayout({ children, onSearch, onFilterToggle }: Dashboar
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuItem>
-                  <span>Profile</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <span>Settings</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <span>Sign out</span>
+                  <Button onClick={()=>{ localStorage.clear(); window.location.href = "/"}}>Logout</Button>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

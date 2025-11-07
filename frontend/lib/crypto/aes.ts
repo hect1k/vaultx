@@ -8,6 +8,12 @@ export async function importAesKeyFromB64(key_b64: string, usages: KeyUsage[] = 
   return crypto.subtle.importKey("raw", keyBuf, { name: AES_ALGO }, false, usages);
 }
 
+export async function decryptBytesWithAes(ciphertext_b64: string, iv_b64: string, key_b64: string) {
+  const key = await importAesKeyFromB64(key_b64, ["decrypt"]);
+  const buf = await aesDecryptArrayBuffer(ciphertext_b64, iv_b64, key);
+  return new Uint8Array(buf);
+}
+
 export async function aesEncryptArrayBuffer(plain: ArrayBuffer, key: CryptoKey) {
   const iv = genRandomBytes(IV_LEN);
   const ct = await crypto.subtle.encrypt({ name: AES_ALGO, iv }, key, plain);

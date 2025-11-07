@@ -24,10 +24,24 @@ class User(Base):
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
+    password_salt_b64 = Column(LargeBinary, nullable=False)
+    enc_master_key_b64 = Column(LargeBinary, nullable=False)
+    enc_master_key_iv = Column(LargeBinary, nullable=False)
+
+    enc_search_key_b64 = Column(LargeBinary, nullable=False)
+    enc_search_key_iv = Column(LargeBinary, nullable=False)
+
+    enc_private_key_b64 = Column(LargeBinary, nullable=False)
+    enc_private_key_iv = Column(LargeBinary, nullable=False)
+
+    public_key_b64 = Column(LargeBinary, nullable=False)
+
+    index_state_ciphertext = Column(LargeBinary, nullable=True)
+    index_state_iv = Column(LargeBinary, nullable=True)
+
     is_active = Column(Boolean, default=True, nullable=False)
-    public_key = Column(LargeBinary, nullable=True)
-    encrypted_private_key = Column(LargeBinary, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.now, nullable=False)
+
     files = relationship("File", back_populates="owner", cascade="all, delete-orphan")
     backups = relationship(
         "Backup", back_populates="user", cascade="all, delete-orphan"

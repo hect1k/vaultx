@@ -15,8 +15,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
   const sidebarItems = [
     { icon: "drive", label: "My Drive", active: activeSection === "My Drive" },
-    { icon: "recent", label: "Recent", active: activeSection === "Recent" },
-    { icon: "starred", label: "Starred", active: activeSection === "Starred" },
   ];
 
   const handleNavigation = (section: string) => {

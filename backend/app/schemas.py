@@ -4,11 +4,36 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr
 
 
-class UserCreate(BaseModel):
+class RegisterPayload(BaseModel):
     email: EmailStr
     password: str
+
+    password_salt_b64: str
+    enc_master_key_b64: str
+    enc_master_key_iv: str
+    enc_search_key_b64: str
+    enc_search_key_iv: str
+    enc_private_key_b64: str
+    enc_private_key_iv: str
     public_key_b64: str
-    encrypted_private_key_b64: str
+
+
+class UserKeysResponse(BaseModel):
+    password_salt_b64: str
+    enc_master_key_b64: str
+    enc_master_key_iv: str
+    enc_search_key_b64: str
+    enc_search_key_iv: str
+    enc_private_key_b64: str
+    enc_private_key_iv: str
+    public_key_b64: str
+
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    keys: UserKeysResponse
 
 
 class UserLogin(BaseModel):

@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import AsyncSessionLocal, Base, engine
-from app.routes import auth, files, search, shares
+from app.routes import auth, files, search, shares, user
 
 
 @asynccontextmanager
@@ -48,6 +48,7 @@ app.include_router(auth.router)
 app.include_router(files.router)
 app.include_router(search.router)
 app.include_router(shares.router)
+app.include_router(user.router)
 
 
 @app.get("/health")
