@@ -1,16 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UploadModal } from "@/components/upload-modal";
-import { useState } from "react";
 
 interface SidebarProps {
+  activeSection: string;
+  setActiveSection: (section: string) => void;
   onNavigate?: (section: string) => void;
 }
 
-export function Sidebar({ onNavigate }: SidebarProps) {
+export function Sidebar({ activeSection, setActiveSection, onNavigate }: SidebarProps) {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState("My Vault");
 
   const sidebarItems = [
     { icon: "drive", label: "My Vault" },
@@ -20,7 +21,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   ];
 
   const handleNavigation = (section: string) => {
-    setActiveSection(section);
     onNavigate?.(section);
   };
 
@@ -28,7 +28,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     <div className="w-64 border-r border-border bg-sidebar p-4 flex flex-col">
       <Button
         className="w-full mb-6 bg-primary hover:bg-primary/90 text-primary-foreground"
-        onClick={() => setUploadModalOpen(true)}
+        onClick={() => {
+          setActiveSection("My Vault");
+          setUploadModalOpen(true);
+        }}
       >
         <svg
           className="w-4 h-4 mr-2"

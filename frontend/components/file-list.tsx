@@ -44,9 +44,8 @@ export function FileList({
       <div className="grid grid-cols-12 gap-4 pb-3 border-b border-border text-sm font-medium text-muted-foreground">
         <div className="col-span-6">Name</div>
         <div className="col-span-2">Owner</div>
-        <div className="col-span-2">Last modified</div>
+        <div className="col-span-2">Uploaded at</div>
         <div className="col-span-1">Size</div>
-        <div className="col-span-1"></div>
       </div>
 
       <div className="space-y-1 mt-2">

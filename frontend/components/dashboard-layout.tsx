@@ -16,9 +16,10 @@ import {
 interface DashboardLayoutProps {
   children: React.ReactNode;
   onSearch?: (query: string) => void;
+  onNavigate?: (section: string) => void;
 }
 
-export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
+export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLayoutProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
@@ -28,9 +29,11 @@ export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
     setSearchQuery(e.target.value);
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     inputRef.current?.blur();
+    onNavigate?.("My Vault");
+    await new Promise((r) => setTimeout(r, 0)); // wait a tick
     onSearch?.(searchQuery.trim());
     setSearchQuery(searchQuery.trim());
   };

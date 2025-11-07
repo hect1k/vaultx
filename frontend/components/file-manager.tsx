@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/sidebar";
 import { FileGrid } from "@/components/file-grid";
@@ -120,10 +120,17 @@ export function FileManager() {
   // ============================
   // Actual encrypted search
   // ============================
+  const suppressNextFetch = useRef(false);
   const handleSearch = useCallback(
     async (query: string) => {
-      if (activeSection !== "My Vault") return;
-      if (!query.trim()) {
+      query = (query || "").trim();
+
+      if (activeSection !== "My Vault") {
+        suppressNextFetch.current = true;
+        setActiveSection("My Vault");
+      }
+
+      if (!query) {
         fetchAllFiles();
         return;
       }
@@ -223,10 +230,10 @@ export function FileManager() {
   };
 
   return (
-    <DashboardLayout onSearch={handleSearch}>
-      <div className="flex h-[calc(100vh-4rem)]">
+    <DashboardLayout onSearch={handleSearch} onNavigate={setActiveSection}>
+      <div className="flex h-[calc(100dvh-4rem)]">
         {/* Sidebar */}
-        <Sidebar onNavigate={setActiveSection} />
+        <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} onNavigate={setActiveSection} />
 
         <div
           className={`flex-1 flex flex-col ${isDragOver ? "bg-primary/5" : ""}`}
