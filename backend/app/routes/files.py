@@ -41,8 +41,6 @@ async def upload_file(
     if existing:
         raise HTTPException(status_code=409, detail="File ID already exists")
 
-    file_bytes = await file.read()
-
     try:
         data = await file.read()
         encrypted_kf = base64.b64decode(encrypted_kf_b64)
@@ -73,13 +71,24 @@ async def upload_file(
 
     for t in tokens:
         token_b = base64.b64decode(t["token"])
-        value_b = base64.b64decode(t["value"])
+
+        value_obj = t.get("value")
+        if (
+            not isinstance(value_obj, dict)
+            or "ciphertext_b64" not in value_obj
+            or "iv_b64" not in value_obj
+        ):
+            raise HTTPException(status_code=400, detail="Invalid token value format")
+
+        value_json = json.dumps(value_obj).encode()
+
         prev_b = base64.b64decode(t["prev_token"]) if t.get("prev_token") else None
+
         db.add(
             IndexEntry(
                 token=token_b,
                 owner_id=current_user.id,
-                value=value_b,
+                value=value_json,  # JSON-encoded ciphertext+iv
                 prev_token=prev_b,
             )
         )

@@ -38,8 +38,8 @@ async def search(
         entry: Any = result.scalar_one_or_none()
         if not entry:
             break
-        value_bytes = bytes(getattr(entry, "value"))
-        values.append(base64.b64encode(value_bytes).decode())
+        value_json = entry.value.decode()
+        values.append(value_json)
         current_token = getattr(entry, "prev_token")
 
     return {"values": values, "count": len(values)}

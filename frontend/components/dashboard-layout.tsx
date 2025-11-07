@@ -21,14 +21,13 @@ interface DashboardLayoutProps {
   onFilterToggle?: () => void
 }
 
-export function DashboardLayout({ children, onSearch, onFilterToggle }: DashboardLayoutProps) {
+export function DashboardLayout({ children, onSearch }: DashboardLayoutProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const { theme, setTheme } = useTheme()
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value
     setSearchQuery(query)
-    onSearch?.(query)
   }
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -79,22 +78,6 @@ export function DashboardLayout({ children, onSearch, onFilterToggle }: Dashboar
                 onChange={handleSearchChange}
                 className="pl-10 pr-10 h-10 bg-muted/50 border-border focus:bg-background"
               />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
-                onClick={onFilterToggle}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.707A1 1 0 013 7V4z"
-                  />
-                </svg>
-              </Button>
             </form>
           </div>
 
@@ -135,7 +118,7 @@ export function DashboardLayout({ children, onSearch, onFilterToggle }: Dashboar
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuItem>
-                  <Button onClick={()=>{ localStorage.clear(); window.location.href = "/"}}>Logout</Button>
+                  <Button onClick={() => { localStorage.clear(); window.location.href = "/" }}>Logout</Button>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

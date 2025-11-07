@@ -16,7 +16,6 @@ import { bufToB64, genRandomBytes } from "@/lib/crypto/base";
 import { api } from "@/lib/api";
 import { v4 as uuidv4 } from "uuid";
 import { clearVaultXContext } from "@/lib/crypto/context";
-import { Play } from "next/font/google";
 
 interface UploadFile {
   id: string;
@@ -32,7 +31,7 @@ interface UploadModalProps {
   onUploadSuccess?: () => void;
 }
 
-export function UploadModal({ open, onOpenChange, onUploadSuccess }: UploadModalProps) {
+export function UploadModal({ open, onOpenChange }: UploadModalProps) {
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [globalKeywords, setGlobalKeywords] = useState<string[]>([]);
   const [currentKeyword, setCurrentKeyword] = useState("");
@@ -210,11 +209,7 @@ export function UploadModal({ open, onOpenChange, onUploadSuccess }: UploadModal
       );
       sessionStorage.setItem("vaultx_keyword_chain", JSON.stringify(keywordChains));
 
-      onUploadSuccess?.();
-      setTimeout(() => {
-        resetModal();
-        onOpenChange(false);
-      }, 300);
+      window.location.reload();
     } catch (err: any) {
       setUploadFiles((prev) =>
         prev.map((f) => ({

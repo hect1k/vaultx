@@ -8,7 +8,7 @@ import { FileList } from "@/components/file-list";
 import { UploadModal } from "@/components/upload-modal";
 import { ShareModal } from "@/components/share-modal";
 import { DashboardLayout } from "@/components/dashboard-layout";
-import { decryptBytesWithAes, decryptStringWithAes, encryptStringWithAes } from "@/lib/crypto/aes";
+import { decryptBytesWithAes, decryptStringWithAes } from "@/lib/crypto/aes";
 import { getVaultXContext, clearVaultXContext } from "@/lib/crypto/context";
 import { api } from "@/lib/api";
 import { bufToB64 } from "@/lib/crypto/base";
@@ -31,7 +31,6 @@ export function FileManager() {
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareFileId, setShareFileId] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,10 +120,7 @@ export function FileManager() {
   // ============================
   const handleSearch = useCallback(
     async (query: string) => {
-      setSearchQuery(query);
-
       if (!query.trim()) {
-        // Empty search → show all files
         fetchAllFiles();
         return;
       }
@@ -172,7 +168,26 @@ export function FileManager() {
         const decryptedIds: string[] = [];
         for (const v of values) {
           try {
-            const id = await decryptStringWithAes(v, "", searchKey_b64);
+            // v is likely a stringified JSON from backend
+            let valueObj;
+            try {
+              valueObj = typeof v === "string" ? JSON.parse(v) : v;
+            } catch {
+              console.warn("Invalid value format:", v);
+              continue;
+            }
+
+            if (!valueObj.ciphertext_b64 || !valueObj.iv_b64) {
+              console.warn("Missing ciphertext/iv in value:", valueObj);
+              continue;
+            }
+
+            const id = await decryptStringWithAes(
+              valueObj.ciphertext_b64,
+              valueObj.iv_b64,
+              searchKey_b64
+            );
+
             decryptedIds.push(id);
           } catch (err) {
             console.warn("Failed to decrypt file ID from token:", err);
@@ -218,15 +233,11 @@ export function FileManager() {
     setShareModalOpen(true);
   };
 
-  const handleUploadSuccess = () => {
-    window.location.reload();
-  };
-
   // ============================
   // UI
   // ============================
   return (
-    <DashboardLayout onSearch={handleSearch} showFilter={false}>
+    <DashboardLayout onSearch={handleSearch}>
       <div className="flex h-[calc(100vh-4rem)]">
         <Sidebar onNavigate={() => { }} />
 
@@ -305,7 +316,6 @@ export function FileManager() {
           <UploadModal
             open={uploadModalOpen}
             onOpenChange={setUploadModalOpen}
-            onUploadSuccess={handleUploadSuccess}
           />
 
           <ShareModal

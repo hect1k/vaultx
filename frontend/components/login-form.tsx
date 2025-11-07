@@ -155,11 +155,10 @@ export function LoginForm() {
         router.push("/dashboard")
       }
     } catch (err) {
-      console.error(err)
       alert(
-        mode === "register"
-          ? "Registration failed. Try again."
-          : "Login failed. Check your credentials."
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
       )
     } finally {
       setLoading(false)

@@ -12,14 +12,16 @@ export const api = {
       body: json ? JSON.stringify(data) : data,
     });
 
-    if (res.status === 401) {
+    const data_ = await res.json();
+
+    if (res.status === 401 && data_.detail == "Invalid or expired token") {
       clearVaultXContext();
       alert("Please log in again.");
       window.location.href = "/";
     }
 
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+    if (!res.ok) throw new Error(data_.detail || "Something went wrong.");
+    return data_;
   },
 
   get: async (endpoint: string, token?: string) => {
@@ -29,7 +31,10 @@ export const api = {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
+
+    const data_ = await res.json();
+
+    if (!res.ok) throw new Error(data_.detail || "Something went wrong.");
+    return data_;
   },
 };
