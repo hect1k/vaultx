@@ -211,16 +211,83 @@ export function FileManager() {
   // ============================
   // Download, Delete, Share
   // ============================
-  const handleDownloadFile = (id: string) => {
+  const handleDownloadFile = async (id: string) => {
     const file = files.find((f) => f.id === id);
-    console.log("📥 Download clicked for:", file?.name || id);
-    // todo
+    if (!file) {
+      console.warn("Download: file not found", id);
+      return;
+    }
+
+    console.log("📥 Download clicked for:", file.name);
+
+    try {
+      const ctx = getVaultXContext();
+      if (!ctx.accessToken) {
+        clearVaultXContext();
+        alert("Session expired — please log in again.");
+        window.location.href = "/";
+        return;
+      }
+
+      // 👇 using api helper instead of fetch
+      const response = await api.getRaw(
+        `/files/${id}/download`,
+        ctx.accessToken
+      );
+      // assuming api.getRaw() returns a native Response or Blob
+      // if not, use api.getBlob or equivalent from your helper
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name || "download";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      console.log(`✅ Downloaded: ${file.name}`);
+    } catch (err) {
+      console.error("Download failed:", err);
+      alert(`Failed to download "${file.name}". Check console for details.`);
+    }
   };
 
-  const handleDeleteFile = (id: string) => {
+  const handleDeleteFile = async (id: string) => {
     const file = files.find((f) => f.id === id);
-    console.log("🗑️ Delete clicked for:", file?.name || id);
-    // todo
+    if (!file) {
+      console.warn("Delete: file not found", id);
+      return;
+    }
+
+    const confirmDelete = confirm(
+      `🗑️ Are you sure you want to delete "${file.name}"?`
+    );
+    if (!confirmDelete) return;
+
+    const prevFiles = files;
+    setFiles((cur) => cur.filter((f) => f.id !== id));
+
+    try {
+      const ctx = getVaultXContext();
+      if (!ctx.accessToken) {
+        clearVaultXContext();
+        alert("Session expired — please log in again.");
+        window.location.href = "/";
+        return;
+      }
+
+      // 👇 clean api call via api.ts
+      await api.delete(`/files/${id}`, ctx.accessToken);
+
+      console.log(`✅ Deleted: ${file.name}`);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      setFiles(prevFiles); // rollback optimistic UI
+      alert(`Failed to delete "${file.name}". Try again.`);
+    }
   };
 
   const handleShareFile = (id: string) => {
@@ -233,7 +300,11 @@ export function FileManager() {
     <DashboardLayout onSearch={handleSearch} onNavigate={setActiveSection}>
       <div className="flex h-[calc(100dvh-4rem)]">
         {/* Sidebar */}
-        <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} onNavigate={setActiveSection} />
+        <Sidebar
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+          onNavigate={setActiveSection}
+        />
 
         <div
           className={`flex-1 flex flex-col ${isDragOver ? "bg-primary/5" : ""}`}
