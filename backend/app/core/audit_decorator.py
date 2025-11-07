@@ -24,7 +24,6 @@ def audit_event(action: str):
                     request=request,
                     user_id=user_id,
                     action=action,
-                    details={"route": func.__name__, "args": {}, "kwargs": {}},
                 )
             except Exception as e:
                 print(f"[AUDIT ERROR] Failed to record log: {e}")

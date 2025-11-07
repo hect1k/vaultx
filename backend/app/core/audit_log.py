@@ -18,7 +18,6 @@ async def record_audit_log(
     request: Request,
     user_id: Optional[str],
     action: str,
-    details: Optional[Dict[str, Any]] = None,
 ):
     client_ip = request.headers.get("X-Forwarded-For")
     if client_ip:
@@ -30,7 +29,6 @@ async def record_audit_log(
 
     entry_json = {
         "action": action,
-        "details": details or {},
         "timestamp": datetime.now().isoformat(),
         "ip": client_ip,
         "user_agent": user_agent,
