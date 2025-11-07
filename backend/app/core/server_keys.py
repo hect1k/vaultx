@@ -15,10 +15,7 @@ PUB_PATH = Path(KEYS_DIR) / "server_signing_key.pub"
 
 def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(path, 0o700)
-    except PermissionError:
-        pass
+    os.chmod(path, 0o700)
 
 
 def _generate_rsa() -> Tuple[rsa.RSAPrivateKey, bytes, bytes]:
@@ -39,42 +36,39 @@ def _generate_rsa() -> Tuple[rsa.RSAPrivateKey, bytes, bytes]:
 
 def _write_secure(path: Path, data: bytes, mode: int = 0o600) -> None:
     path.write_bytes(data)
-    try:
-        os.chmod(path, mode)
-    except PermissionError:
-        pass
+    os.chmod(path, mode)
 
 
 def _load_or_create_keys() -> Tuple[rsa.RSAPrivateKey, rsa.RSAPublicKey]:
-    _ensure_dir(Path(KEYS_DIR))
+    main_dir = Path(KEYS_DIR)
+    fallback_dir = Path(settings.fallback_keys_dir)
 
-    if PRIV_PATH.exists() and PUB_PATH.exists():
-        priv = serialization.load_pem_private_key(PRIV_PATH.read_bytes(), password=None)
-        pub = serialization.load_pem_public_key(PUB_PATH.read_bytes())
+    try:
+        _ensure_dir(main_dir)
+    except PermissionError:
+        _ensure_dir(fallback_dir)
+
+    priv_path = main_dir / "server_signing_key.pem"
+    pub_path = main_dir / "server_signing_key.pub"
+
+    if not os.access(main_dir, os.W_OK):
+        priv_path = fallback_dir / "server_signing_key.pem"
+        pub_path = fallback_dir / "server_signing_key.pub"
+
+    if priv_path.exists() and pub_path.exists():
+        priv = serialization.load_pem_private_key(priv_path.read_bytes(), password=None)
+        pub = serialization.load_pem_public_key(pub_path.read_bytes())
     else:
-        _, priv_pem, pub_pem = _generate_rsa()
-        try:
-            _write_secure(PRIV_PATH, priv_pem, 0o600)
-            _write_secure(PUB_PATH, pub_pem, 0o644)
-        except PermissionError:
-            fallback = Path(settings.fallback_keys_dir)
-            _ensure_dir(fallback)
-            fb_priv = fallback / "server_signing_key.pem"
-            fb_pub = fallback / "server_signing_key.pub"
-            _write_secure(fb_priv, priv_pem, 0o600)
-            _write_secure(fb_pub, pub_pem, 0o644)
-            priv = serialization.load_pem_private_key(
-                fb_priv.read_bytes(), password=None
-            )
-            pub = serialization.load_pem_public_key(fb_pub.read_bytes())
-        else:
-            priv = serialization.load_pem_private_key(priv_pem, password=None)
-            pub = serialization.load_pem_public_key(pub_pem)
+        key, priv_pem, pub_pem = _generate_rsa()
+        _write_secure(priv_path, priv_pem, 0o600)
+        _write_secure(pub_path, pub_pem, 0o644)
+        priv, pub = key, key.public_key()
 
     if not isinstance(priv, rsa.RSAPrivateKey):
         raise TypeError("Loaded private key is not RSA")
     if not isinstance(pub, rsa.RSAPublicKey):
         raise TypeError("Loaded public key is not RSA")
+
     return priv, pub
 
 
