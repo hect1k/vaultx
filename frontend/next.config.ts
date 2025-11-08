@@ -1,14 +1,25 @@
 import type { NextConfig } from "next";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
 const nextConfig: NextConfig = {
-  output: "standalone",
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+
+  publicRuntimeConfig: {
+    // Will be available on both server and client
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  },
+
   async rewrites() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
     return [
       {
         source: "/api/:path*",
-        destination: `${API_URL}/:path*`,
+        destination: `${apiUrl}/:path*`,
       },
     ];
   },

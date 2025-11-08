@@ -379,7 +379,7 @@ export function FileManager() {
 
   return (
     <DashboardLayout onSearch={handleSearch} onNavigate={setActiveSection}>
-      <div className="flex h-[calc(100dvh-4rem)]">
+      <div className="flex flex-1">
         {/* Sidebar */}
         <Sidebar
           activeSection={activeSection}

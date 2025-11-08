@@ -1,6 +1,7 @@
+import { apiUrl } from "@/config";
 import { clearVaultXContext } from "./crypto/context";
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+export const API_BASE_URL = apiUrl
 
 class NetworkError extends Error {
   constructor(message: string) {

@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 # Only copy dependency files first for better caching
-COPY backend/requirements.txt .
+COPY requirements.txt .
 
 # Build wheels for all deps
 RUN pip install --upgrade pip wheel \
@@ -39,7 +39,7 @@ COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 
 # Copy application code
-COPY backend/ ./
+COPY . .
 
 # Ensure writable key directory if you mount secrets there
 RUN mkdir -p /etc/vaultx/keys && chown -R appuser:appuser /etc/vaultx /app
@@ -47,4 +47,4 @@ RUN mkdir -p /etc/vaultx/keys && chown -R appuser:appuser /etc/vaultx /app
 USER appuser
 
 EXPOSE ${BACKEND_PORT:-8000}
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:${BACKEND_PORT:-8000}"]
+CMD ["fastapi", "run", "--host", "0.0.0.0", "--port", "8000"]

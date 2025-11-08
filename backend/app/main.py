@@ -31,14 +31,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-if settings.app_env == "dev":
-    origins = [settings.dev_frontend_url]
-else:
-    origins = [settings.prod_frontend_url]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
