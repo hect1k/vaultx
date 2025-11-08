@@ -13,7 +13,6 @@ import { getVaultXContext, clearVaultXContext } from "@/lib/crypto/context";
 import { api } from "@/lib/api";
 import { b64ToBuf, bufToB64 } from "@/lib/crypto/base";
 import { Logs } from "@/components/logs";
-import { Recents } from "./recents";
 import { Trash } from "./trash";
 
 interface FileItem {
@@ -266,8 +265,6 @@ export function FileManager() {
       }
 
       const data = await api.get(`/files/${id}/download`, ctx.accessToken);
-      console.log("Download response:", data);
-
       const {
         ciphertext,
         file_iv,
@@ -408,8 +405,6 @@ export function FileManager() {
         >
           {activeSection === "Logs" ? (
             <Logs />
-          ) : activeSection === "Recents" ? (
-            <Recents />
           ) : activeSection === "Trash" ? (
             <Trash />
           ) : (

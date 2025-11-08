@@ -41,6 +41,8 @@ export function FileList({
         ? `${(b / 1024).toFixed(2)} MB`
         : `${(b / 1024 / 1024).toFixed(2)} GB`;
 
+  const current_user = sessionStorage.getItem("vaultx_user_email");
+
   return (
     <div className="p-6">
       <div className="grid grid-cols-12 gap-4 pb-3 border-b border-border text-sm font-medium text-muted-foreground">
@@ -83,7 +85,7 @@ export function FileList({
                 </div>
 
                 <div className="col-span-3 flex items-center text-sm text-muted-foreground">
-                  {file.owner}
+                  {file.owner == current_user ? "You" : file.owner}
                 </div>
 
                 <div className="col-span-3 flex items-center text-sm text-muted-foreground">

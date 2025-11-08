@@ -1,51 +1,75 @@
+version: "3.9"
+
 services:
   db:
-    image: postgres:15
+    image: postgres:16
+    container_name: vaultx_db
     restart: always
     environment:
-      POSTGRES_USER: vaultx
-      POSTGRES_PASSWORD: vaultxpass
+      POSTGRES_USER: vaultx_user
+      POSTGRES_PASSWORD: vaultx_pass
       POSTGRES_DB: vaultx
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
-      - vaultx-network
+      - vaultx_net
+    ports:
+      - "5432"
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    build: ./backend
+    container_name: vaultx_backend
     restart: always
+    environment:
+      APP_ENV: prod
+      APP_SECRET_KEY: supersecretkey_here
+      JWT_SECRET_KEY: supersecretjwtkey_here
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+      JWT_REFRESH_EXPIRE_DAYS: 30
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: vaultx
+      DB_USER: vaultx_user
+      DB_PASSWORD: vaultx_pass
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
+      MAIL_USERNAME: noreply
+      MAIL_PASSWORD: yourpassword
+      MAIL_FROM: "VaultX <noreply@vaultx.in>"
+      MAIL_STARTTLS: "true"
+      MAIL_SSL_TLS: "false"
+      KEYS_DIR: /etc/vaultx/keys
+      FALLBACK_KEYS_DIR: .secret/keys
+      DEV_FRONTEND_URL: http://localhost:3000
+      PROD_FRONTEND_URL: http://localhost:3000
     depends_on:
       - db
-    environment:
-      DB_HOST: db
-      DB_USER: vaultx
-      DB_PASSWORD: vaultxpass
-      DB_NAME: vaultx
-      DB_PORT: 5432
-    ports:
-      - "8000:8000"
     networks:
-      - vaultx-network
+      - vaultx_net
+    ports:
+      - "8000"
+    volumes:
+      - ./backend:/app
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    build: ./frontend
+    container_name: vaultx_frontend
     restart: always
-    depends_on:
-      - backend
     environment:
       NEXT_PUBLIC_API_URL: http://backend:8000
-    ports:
-      - "3000:3000"
+    depends_on:
+      - backend
     networks:
-      - vaultx-network
-
-volumes:
-  db-data:
+      - vaultx_net
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
 
 networks:
-  vaultx-network:
+  vaultx_net:
     driver: bridge
+
+volumes:
+  postgres_data:

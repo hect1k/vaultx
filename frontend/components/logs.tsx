@@ -47,7 +47,7 @@ export function Logs() {
       const ctx = getVaultXContext();
       const res = await api.get("/audit/verify", ctx.accessToken);
       setVerified(res.valid);
-      setVerifyErrors([]);
+      setVerifyErrors(res.errors || []);
     } catch (err: any) {
       console.error("Audit verification failed:", err);
       setVerified(false);
@@ -104,7 +104,7 @@ export function Logs() {
                     <p>Tamper verification failed. Possible integrity breaches:</p>
                     <div className="mt-2 space-y-1">
                       {verifyErrors.map((err, i) => (
-                        <p key={i} className="text-sm text-red-500">
+                        <p key={i} className="text-sm ml-8">
                           • {err}
                         </p>
                       ))}

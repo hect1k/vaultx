@@ -23,7 +23,13 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState("");
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  // Ensure theme hydration
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
@@ -44,10 +50,24 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
     onSearch?.("");
   };
 
+  const toggleTheme = () => {
+    if (!mounted) return;
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
+  };
+
   useEffect(() => {
     const storedEmail = sessionStorage.getItem("vaultx_user_email");
     if (storedEmail) setEmail(storedEmail);
   }, []);
+
+  if (!mounted) {
+    // prevent flicker and wrong theme on first paint
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -82,9 +102,9 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
             </span>
           </div>
 
+          {/* Center Section (Search) */}
           <div className="flex-1 max-w-2xl mx-8 flex items-center space-x-3">
             <form onSubmit={handleSearchSubmit} className="relative flex-1">
-              {/* Search icon */}
               <svg
                 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
                 fill="none"
@@ -99,7 +119,6 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
                 />
               </svg>
 
-              {/* Input field */}
               <Input
                 ref={inputRef}
                 placeholder="Search Vault"
@@ -108,7 +127,6 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
                 className="pl-10 pr-10 h-10 bg-muted/50 border-border focus:bg-background"
               />
 
-              {/* Clear button (shows only when there’s text) */}
               {searchQuery && (
                 <button
                   type="button"
@@ -129,7 +147,7 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
             </form>
           </div>
 
-          {/* Right Section (Actions) */}
+          {/* Right Section */}
           <div className="flex items-center space-x-3">
             <p className="text-sm text-muted-foreground">
               Logged in as{" "}
@@ -164,13 +182,11 @@ export function DashboardLayout({ children, onSearch, onNavigate }: DashboardLay
 
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuItem
-                  onClick={() =>
-                    setTheme(theme === "dark" ? "light" : "dark")
-                  }
+                  onClick={toggleTheme}
                   className="flex items-center justify-between cursor-pointer"
                 >
                   <span>Toggle Theme</span>
-                  {theme === "dark" ? (
+                  {resolvedTheme === "dark" ? (
                     <svg
                       className="h-4 w-4 text-yellow-500"
                       fill="none"

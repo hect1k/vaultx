@@ -90,7 +90,6 @@ export function Trash() {
 
       const data = await api.get("/files/deleted", ctx.accessToken);
       const decryptedFiles = await decryptFiles(data.files || []);
-      console.log("Decrypted files:", decryptedFiles);
       setFiles(decryptedFiles);
     } catch (err: any) {
       console.error("Error fetching trash:", err);

@@ -50,6 +50,4 @@ async def verify_my_audit_chain(
     current_user=Depends(get_current_user),
 ):
     ok, errors = await verify_audit_chain(db, current_user.id)
-    if not ok:
-        raise HTTPException(status_code=409, detail={"errors": errors})
-    return {"valid": True, "count": len(errors)}
+    return {"valid": ok, "errors": errors}

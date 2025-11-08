@@ -114,37 +114,23 @@ async def list_files(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    total_query = await db.execute(
-        select(func.count())
-        .select_from(File)
-        .where(File.owner_id == current_user.id, File.deleted.is_(False))
-    )
-    total = total_query.scalar_one()
-
-    # Owned files
     owned_q = await db.execute(
         select(File, User.email)
         .join(User, File.owner_id == User.id)
         .where(File.owner_id == current_user.id, File.deleted.is_(False))
-        .limit(limit)
-        .offset(offset)
     )
     owned_files = owned_q.all()
 
-    # Shared files
     shared_q = await db.execute(
         select(File, User.email, FileShare)
         .join(User, File.owner_id == User.id)
         .join(FileShare, FileShare.file_id == File.id)
         .where(FileShare.recipient_user_id == current_user.id, File.deleted.is_(False))
-        .limit(limit)
-        .offset(offset)
     )
     shared_files = shared_q.all()
 
-    out = []
+    combined = []
 
-    # Owned
     for f, owner_email in owned_files:
         shared_entries = await db.execute(
             select(User.email)
@@ -153,7 +139,7 @@ async def list_files(
         )
         shared_emails = [row[0] for row in shared_entries.all()]
 
-        out.append(
+        combined.append(
             {
                 "id": str(f.id),
                 "owner_email": owner_email,
@@ -167,12 +153,12 @@ async def list_files(
                 "created_at": f.created_at,
                 "deleted": bool(f.deleted),
                 "shared_with": shared_emails,
+                "is_shared_file": False,
             }
         )
 
-    # Shared
     for f, owner_email, share in shared_files:
-        out.append(
+        combined.append(
             {
                 "id": str(f.id),
                 "owner_email": owner_email,
@@ -186,98 +172,20 @@ async def list_files(
                 "created_at": f.created_at,
                 "deleted": bool(f.deleted),
                 "shared_with": [],
+                "is_shared_file": True,
             }
         )
+
+    combined.sort(key=lambda x: x["created_at"], reverse=True)
+    paginated = combined[offset : offset + limit]
 
     return {
-        "total": total,
-        "count": len(out),
+        "total": len(combined),
+        "count": len(paginated),
         "limit": limit,
         "offset": offset,
-        "files": out,
+        "files": paginated,
     }
-
-
-# ----------------------------
-# Recently created files
-# ----------------------------
-@router.get("/recent", response_model=dict)
-async def list_recent_files(
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    # Both queries must have the exact same columns and order
-    owned_query = (
-        select(
-            File.id.label("id"),
-            File.metadata_ciphertext.label("metadata_ciphertext"),
-            File.metadata_iv.label("metadata_iv"),
-            File.encrypted_kf.label("encrypted_kf"),
-            File.encrypted_kf_iv.label("encrypted_kf_iv"),
-            File.created_at.label("created_at"),
-            File.deleted.label("deleted"),
-            User.email.label("owner_email"),
-            func.null().label("wrapped_key"),  # keep column alignment
-        )
-        .join(User, File.owner_id == User.id)
-        .where(File.owner_id == current_user.id, File.deleted.is_(False))
-    )
-
-    shared_query = (
-        select(
-            File.id.label("id"),
-            File.metadata_ciphertext.label("metadata_ciphertext"),
-            File.metadata_iv.label("metadata_iv"),
-            func.null().label("encrypted_kf"),  # no owned key for shared
-            func.null().label("encrypted_kf_iv"),
-            File.created_at.label("created_at"),
-            File.deleted.label("deleted"),
-            User.email.label("owner_email"),
-            FileShare.wrapped_key.label("wrapped_key"),
-        )
-        .join(User, File.owner_id == User.id)
-        .join(FileShare, FileShare.file_id == File.id)
-        .where(FileShare.recipient_user_id == current_user.id, File.deleted.is_(False))
-    )
-
-    # union + subquery + sorting
-    union_subq = owned_query.union_all(shared_query).subquery()
-    recent_query = select(union_subq).order_by(union_subq.c.created_at.desc()).limit(10)
-
-    result = await db.execute(recent_query)
-    rows = result.all()
-
-    out = []
-    for r in rows:
-        out.append(
-            {
-                "id": str(r.id),
-                "owner_email": r.owner_email,
-                "metadata_ciphertext": base64.b64encode(
-                    r.metadata_ciphertext or b""
-                ).decode(),
-                "metadata_iv": base64.b64encode(r.metadata_iv or b"").decode(),
-                "encrypted_kf_b64": (
-                    base64.b64encode(r.encrypted_kf or b"").decode()
-                    if r.encrypted_kf
-                    else None
-                ),
-                "encrypted_kf_iv": (
-                    base64.b64encode(r.encrypted_kf_iv or b"").decode()
-                    if r.encrypted_kf_iv
-                    else None
-                ),
-                "wrapped_key_b64": (
-                    base64.b64encode(r.wrapped_key or b"").decode()
-                    if r.wrapped_key
-                    else None
-                ),
-                "created_at": r.created_at,
-                "deleted": bool(r.deleted),
-            }
-        )
-
-    return {"files": out}
 
 
 # ----------------------------
