@@ -1,7 +1,4 @@
-import { apiUrl } from "@/config";
 import { clearVaultXContext } from "./crypto/context";
-
-export const API_BASE_URL = apiUrl
 
 class NetworkError extends Error {
   constructor(message: string) {
@@ -16,7 +13,7 @@ export const api = {
       const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
       if (json) headers["Content-Type"] = "application/json";
 
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const res = await fetch(`/api/${endpoint}`, {
         method: "POST",
         headers,
         body: json ? JSON.stringify(data) : data,
@@ -45,7 +42,7 @@ export const api = {
 
   get: async (endpoint: string, token?: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const res = await fetch(`/api/${endpoint}`, {
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -75,7 +72,7 @@ export const api = {
 
   delete: async (endpoint: string, token?: string) => {
     try {
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const res = await fetch(`/api/${endpoint}`, {
         method: "DELETE",
         headers: {
           Accept: "application/json",

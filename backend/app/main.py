@@ -12,11 +12,8 @@ from app.routes import audit, auth, files, search, shares, user
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
-        if settings.app_env == "dev":
-            await conn.run_sync(Base.metadata.create_all)
-            print("🗄️  Database tables checked/created (dev mode).")
-        else:
-            await conn.run_sync(lambda _: None)
+        await conn.run_sync(Base.metadata.create_all)
+        print("🗄️  Database tables checked/created.")
     print("✅ Database connected successfully.")
 
     yield
