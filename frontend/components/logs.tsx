@@ -62,13 +62,6 @@ export function Logs() {
     verifyAudit();
   }, []);
 
-  const themeClass =
-    verified === null
-      ? ""
-      : verified
-      ? "border-green-600/60 bg-green-50/5"
-      : "border-red-600/60 bg-red-50/5";
-
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -84,84 +77,82 @@ export function Logs() {
         </Button>
       </div>
 
-      {/* Content Section */}
+      {/* Content */}
       <div className="flex-1 p-6 flex flex-col space-y-6 overflow-auto">
         {loading ? (
-          <div className="text-muted-foreground text-sm">Loading audit logs...</div>
+          <div className="text-muted-foreground text-sm">
+            Loading audit logs...
+          </div>
         ) : logs.length === 0 ? (
           <div className="text-muted-foreground text-sm">No logs found.</div>
         ) : (
-          <div
-            className={cn(
-              "border border-border rounded-md divide-y divide-border transition-colors",
-              themeClass
+          <>
+            {/* Verification Status */}
+            {verified !== null && !verifying && (
+              <div
+                className={cn(
+                  "p-4 rounded-md border text-sm transition-all",
+                  verified
+                    ? "bg-green-500/50"
+                    : "bg-red-500/50"
+                )}
+              >
+                {verified ? (
+                  <p>No integrity issues detected. Your audit chain is valid.</p>
+                ) : (
+                  <>
+                    <p>Tamper verification failed. Possible integrity breaches:</p>
+                    <div className="mt-2 space-y-1">
+                      {verifyErrors.map((err, i) => (
+                        <p key={i} className="text-sm text-red-500">
+                          • {err}
+                        </p>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
-          >
-            {/* Table Header */}
-            <div className="grid grid-cols-5 bg-muted/50 text-sm font-medium text-foreground px-4 py-2">
-              <span>ID</span>
-              <span>Action</span>
-              <span>IP</span>
-              <span>User Agent</span>
-              <span className="text-right">Timestamp</span>
+
+            {/* Logs Table */}
+            <div className="border border-border rounded-md divide-y divide-border transition-colors">
+              {/* Table Header */}
+              <div className="grid grid-cols-4 bg-muted/50 text-sm font-medium text-foreground px-4 py-2">
+                <span>Action</span>
+                <span>IP Address</span>
+                <span>User Agent</span>
+                <span className="text-right">Timestamp</span>
+              </div>
+
+              {/* Table Rows */}
+              {logs.map((log) => {
+                const entry =
+                  typeof log.entry === "object"
+                    ? log.entry
+                    : JSON.parse(log.entry || "{}");
+
+                return (
+                  <div
+                    key={log.id}
+                    className="grid grid-cols-4 px-4 py-3 text-sm hover:bg-muted/30 transition-colors"
+                  >
+                    <span className="text-primary font-medium truncate">
+                      {entry.action || "—"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {entry.ip || "—"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {entry.user_agent || "—"}
+                    </span>
+                    <span className="text-right text-muted-foreground">
+                      {new Date(log.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-
-            {/* Table Rows */}
-            {logs.map((log) => {
-              const entry =
-                typeof log.entry === "object"
-                  ? log.entry
-                  : JSON.parse(log.entry || "{}");
-
-              return (
-                <div
-                  key={log.id}
-                  className="grid grid-cols-5 px-4 py-3 text-sm hover:bg-muted/30 transition-colors"
-                >
-                  <span className="truncate">{log.id}</span>
-                  <span className="text-primary font-medium truncate">
-                    {entry.action || "—"}
-                  </span>
-                  <span className="truncate text-muted-foreground">
-                    {entry.ip || "—"}
-                  </span>
-                  <span className="truncate text-muted-foreground">
-                    {entry.user_agent || "—"}
-                  </span>
-                  <span className="text-right text-muted-foreground">
-                    {new Date(log.created_at).toLocaleString()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Verification Results */}
-        {verified !== null && !verifying && (
-          <div
-            className={cn(
-              "mt-3 p-4 rounded-md border text-sm transition-all",
-              verified
-                ? "border-green-600/60 text-green-600 bg-green-50/10"
-                : "border-red-600/60 text-red-600 bg-red-50/10"
-            )}
-          >
-            {verified ? (
-              <p>✅ No integrity issues detected. Your audit chain is valid.</p>
-            ) : (
-              <>
-                <p>⚠️ Tamper verification failed. Possible integrity breaches:</p>
-                <div className="mt-2 space-y-1">
-                  {verifyErrors.map((err, i) => (
-                    <p key={i} className="text-sm text-red-500">
-                      • {err}
-                    </p>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          </>
         )}
       </div>
     </div>

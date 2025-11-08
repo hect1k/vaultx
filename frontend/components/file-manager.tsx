@@ -11,7 +11,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { decryptBytesWithAes, decryptStringWithAes } from "@/lib/crypto/aes";
 import { getVaultXContext, clearVaultXContext } from "@/lib/crypto/context";
 import { api } from "@/lib/api";
-import { bufToB64 } from "@/lib/crypto/base";
+import { b64ToBuf, bufToB64 } from "@/lib/crypto/base";
 import { Logs } from "@/components/logs";
 import { Recents } from "./recents";
 import { Trash } from "./trash";
@@ -25,6 +25,8 @@ interface FileItem {
   modified: string;
   owner: string;
   shared: boolean;
+  shared_with?: string[];
+  is_shared_with_me?: boolean;
 }
 
 export function FileManager() {
@@ -44,22 +46,56 @@ export function FileManager() {
   // ============================
   const decryptFiles = useCallback(async (filesRaw: any[]) => {
     const masterKey_b64 = sessionStorage.getItem("vaultx_master_key");
-    if (!masterKey_b64)
-      throw new Error("Missing master key — please log in again.");
+    const privateKey_b64 = sessionStorage.getItem("vaultx_private_key");
+    if (!masterKey_b64 || !privateKey_b64)
+      throw new Error("Missing master or private key — please log in again.");
+
+    // Import user's RSA private key
+    const privKey = await window.crypto.subtle.importKey(
+      "pkcs8",
+      b64ToBuf(privateKey_b64),
+      { name: "RSA-OAEP", hash: "SHA-256" },
+      false,
+      ["decrypt"]
+    );
 
     const decryptedFiles: FileItem[] = [];
+
     for (const f of filesRaw) {
       try {
-        if (!f.encrypted_kf_b64 || !f.encrypted_kf_iv) continue;
+        let kf_b64: string | null = null;
 
-        const kf_bytes = await decryptBytesWithAes(
-          f.encrypted_kf_b64,
-          f.encrypted_kf_iv,
-          masterKey_b64
-        );
-        const kf_b64 = bufToB64(kf_bytes.buffer);
+        // Case 1: Owned file → decrypt with master key
+        if (f.encrypted_kf_b64 && f.encrypted_kf_iv) {
+          const kf_bytes = await decryptBytesWithAes(
+            f.encrypted_kf_b64,
+            f.encrypted_kf_iv,
+            masterKey_b64
+          );
+          kf_b64 = bufToB64(kf_bytes.buffer);
+        }
+
+        // Case 2: Shared file → decrypt wrapped key with private RSA key
+        else if (f.wrapped_key_b64) {
+          try {
+            const wrappedKeyBytes = b64ToBuf(f.wrapped_key_b64);
+            const unwrapped = await window.crypto.subtle.decrypt(
+              { name: "RSA-OAEP" },
+              privKey,
+              wrappedKeyBytes
+            );
+            kf_b64 = bufToB64(unwrapped);
+          } catch (e) {
+            console.warn(`Failed to unwrap Kf for shared file ${f.id}:`, e);
+            continue;
+          }
+        }
+
+        if (!kf_b64) continue;
+
         sessionStorage.setItem(`vaultx_kf_${f.id}`, kf_b64);
 
+        // Now decrypt metadata with Kf
         const metadataJson = await decryptStringWithAes(
           f.metadata_ciphertext,
           f.metadata_iv,
@@ -76,6 +112,8 @@ export function FileManager() {
           modified: new Date(f.created_at).toLocaleString(),
           owner: f.owner_email || "You",
           shared: (f.shared_with || []).length > 0,
+          shared_with: f.shared_with,
+          is_shared_with_me: !!f.wrapped_key_b64,
         });
       } catch (err) {
         console.warn("Failed to decrypt metadata for file:", f.id, err);
@@ -218,26 +256,76 @@ export function FileManager() {
       return;
     }
 
-    console.log("📥 Download clicked for:", file.name);
-
     try {
       const ctx = getVaultXContext();
       if (!ctx.accessToken) {
         clearVaultXContext();
-        alert("Session expired — please log in again.");
+        alert("Please log in again.");
         window.location.href = "/";
         return;
       }
 
-      // 👇 using api helper instead of fetch
-      const response = await api.getRaw(
-        `/files/${id}/download`,
-        ctx.accessToken
-      );
-      // assuming api.getRaw() returns a native Response or Blob
-      // if not, use api.getBlob or equivalent from your helper
+      const data = await api.get(`/files/${id}/download`, ctx.accessToken);
+      console.log("Download response:", data);
 
-      const blob = await response.blob();
+      const {
+        ciphertext,
+        file_iv,
+        encrypted_kf_b64,
+        encrypted_kf_iv,
+        wrapped_key_b64, // only present if shared
+      } = data;
+
+      const masterKey_b64 = sessionStorage.getItem("vaultx_master_key");
+      if (!masterKey_b64) throw new Error("Missing master key — please log in again.");
+
+      let kf_b64: string | null = null;
+
+      // ===== Case 1: your own file =====
+      if (encrypted_kf_b64 && encrypted_kf_iv) {
+        const kf_bytes = await decryptBytesWithAes(
+          encrypted_kf_b64,
+          encrypted_kf_iv,
+          masterKey_b64
+        );
+        kf_b64 = bufToB64(kf_bytes.buffer);
+      }
+
+      // ===== Case 2: shared file =====
+      else if (wrapped_key_b64) {
+        const privateKeyPem = sessionStorage.getItem("vaultx_private_key");
+        if (!privateKeyPem)
+          throw new Error("Missing RSA private key — please log in again.");
+
+        // Import private RSA key
+        const privateKey = await window.crypto.subtle.importKey(
+          "pkcs8",
+          Uint8Array.from(atob(privateKeyPem), (c) => c.charCodeAt(0)),
+          { name: "RSA-OAEP", hash: "SHA-256" },
+          false,
+          ["decrypt"]
+        );
+
+        // Decode base64 → bytes → decrypt
+        const encryptedBytes = Uint8Array.from(atob(wrapped_key_b64), (c) =>
+          c.charCodeAt(0)
+        );
+        const unwrappedKey = await window.crypto.subtle.decrypt(
+          { name: "RSA-OAEP" },
+          privateKey,
+          encryptedBytes
+        );
+
+        kf_b64 = bufToB64(unwrappedKey);
+      } else {
+        throw new Error("No valid key material found for this file.");
+      }
+
+      // ===== Decrypt file content =====
+      const fileBytes = await decryptBytesWithAes(ciphertext, file_iv, kf_b64);
+
+      // ===== Save as downloadable blob =====
+      const blob = new Blob([fileBytes]);
       const url = window.URL.createObjectURL(blob);
 
       const a = document.createElement("a");
@@ -247,8 +335,6 @@ export function FileManager() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-
-      console.log(`✅ Downloaded: ${file.name}`);
     } catch (err) {
       console.error("Download failed:", err);
       alert(`Failed to download "${file.name}". Check console for details.`);
@@ -263,8 +349,9 @@ export function FileManager() {
     }
 
     const confirmDelete = confirm(
-      `🗑️ Are you sure you want to delete "${file.name}"?`
+      `Are you sure you want to delete "${file.name}"?`
     );
+
     if (!confirmDelete) return;
 
     const prevFiles = files;
@@ -279,13 +366,10 @@ export function FileManager() {
         return;
       }
 
-      // 👇 clean api call via api.ts
       await api.delete(`/files/${id}`, ctx.accessToken);
-
-      console.log(`✅ Deleted: ${file.name}`);
     } catch (err) {
       console.error("Delete failed:", err);
-      setFiles(prevFiles); // rollback optimistic UI
+      setFiles(prevFiles);
       alert(`Failed to delete "${file.name}". Try again.`);
     }
   };
@@ -390,15 +474,13 @@ export function FileManager() {
             onOpenChange={setUploadModalOpen}
           />
 
-          <ShareModal
-            open={shareModalOpen}
-            onOpenChange={setShareModalOpen}
-            file={
-              shareFileId
-                ? files.find((f) => f.id === shareFileId) ?? null
-                : null
-            }
-          />
+          {shareModalOpen && shareFileId && (
+            <ShareModal
+              open={shareModalOpen}
+              onOpenChange={setShareModalOpen}
+              file={files.find((f) => f.id === shareFileId)!}
+            />
+          )}
         </div>
       </div>
     </DashboardLayout>

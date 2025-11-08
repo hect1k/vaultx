@@ -43,10 +43,10 @@ async function extractKeywordsFromFile(file: File): Promise<string[]> {
 
   const typeKeywords = getTypeKeywords(file.type, file.name);
   const contentText = await readFileContent(file);
-  const contentKeywords = getTopKeywords(contentText, 4);
+  const contentKeywords = getTopKeywords(contentText, 10);
 
   const combined = new Set([...nameKeywords, ...typeKeywords, ...contentKeywords]);
-  return Array.from(combined).slice(0, 6);
+  return Array.from(combined);
 }
 
 function getTypeKeywords(type: string, name: string): string[] {

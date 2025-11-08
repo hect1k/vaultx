@@ -81,7 +81,7 @@ async def share_file(
     )
 
 
-@router.delete("")
+@router.post("/revoke", response_model=dict)
 async def revoke_share(
     payload: FileShareRevoke,
     db: AsyncSession = Depends(get_db),

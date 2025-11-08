@@ -16,7 +16,6 @@ export function Sidebar({ activeSection, setActiveSection, onNavigate }: Sidebar
   const sidebarItems = [
     { icon: "drive", label: "My Vault" },
     { icon: "logs", label: "Logs" },
-    { icon: "recent", label: "Recents" },
     { icon: "trash", label: "Trash" },
   ];
 

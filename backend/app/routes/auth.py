@@ -1,5 +1,6 @@
 import base64
 
+from cryptography.hazmat.primitives import serialization
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,7 +121,18 @@ async def refresh(refresh_token: str):
 @router.get("/public-key/{email}")
 async def get_public_key(email: str, db: AsyncSession = Depends(get_db)):
     q = await db.execute(select(User.public_key_b64).where(User.email == email))
-    key = q.scalar_one_or_none()
-    if not key:
+    key_b64 = q.scalar_one_or_none()
+    if not key_b64:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"public_key": key}
+
+    try:
+        key_bytes = base64.b64decode(key_b64)
+        public_key = serialization.load_der_public_key(key_bytes)
+        pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse public key: {e}")
+
+    return {"public_key_pem": pem.decode("utf-8")}

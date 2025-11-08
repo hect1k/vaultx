@@ -340,6 +340,45 @@ async def list_files_by_ids(
 
 
 # ----------------------------
+# Deleted files
+# ----------------------------
+@router.get("/deleted", response_model=dict)
+async def list_deleted_files(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(File, User.email)
+        .join(User, File.owner_id == User.id)
+        .where(File.owner_id == current_user.id, File.deleted.is_(True))
+    )
+    files = result.all()
+
+    out = []
+    for f, owner_email in files:
+
+        print(f.id, id)
+
+        out.append(
+            {
+                "id": str(f.id),
+                "owner_email": owner_email,
+                "metadata_ciphertext": base64.b64encode(
+                    f.metadata_ciphertext or b""
+                ).decode(),
+                "metadata_iv": base64.b64encode(f.metadata_iv or b"").decode(),
+                "encrypted_kf_b64": base64.b64encode(f.encrypted_kf or b"").decode(),
+                "encrypted_kf_iv": base64.b64encode(f.encrypted_kf_iv or b"").decode(),
+                "wrapped_key_b64": None,
+                "created_at": f.created_at,
+                "deleted": bool(f.deleted),
+            }
+        )
+
+    return {"count": len(out), "files": out}
+
+
+# ----------------------------
 # Get single file (owned or shared)
 # ----------------------------
 @router.get("/{file_id}", response_model=dict)

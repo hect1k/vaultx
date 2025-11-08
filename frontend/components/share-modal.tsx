@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { getVaultXContext } from "@/lib/crypto/context"
+import { api } from "@/lib/api"
 
 interface FileItem {
   id: string
@@ -29,7 +31,6 @@ export function ShareModal({ open, onOpenChange, file }: ShareModalProps) {
   const [email, setEmail] = useState("")
   const [sharedUsers, setSharedUsers] = useState<string[]>([])
 
-  // Load existing shared users from metadata
   useEffect(() => {
     if (file?.shared_with && Array.isArray(file.shared_with)) {
       setSharedUsers(file.shared_with)
@@ -38,7 +39,18 @@ export function ShareModal({ open, onOpenChange, file }: ShareModalProps) {
     }
   }, [file])
 
-  const handleAddUser = (e: React.FormEvent) => {
+  if (!file) return null
+
+  function pemToArrayBuffer(pem: string): ArrayBuffer {
+    const b64 = pem.replace(/-----.*-----/g, "").replace(/\s+/g, "")
+    const binary = atob(b64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return bytes.buffer
+  }
+
+
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmedEmail = email.trim().toLowerCase()
     if (!trimmedEmail) return
@@ -47,17 +59,73 @@ export function ShareModal({ open, onOpenChange, file }: ShareModalProps) {
       return
     }
 
-    // TODO: Replace with real API call -> POST /files/{file_id}/share
-    setSharedUsers((prev) => [...prev, trimmedEmail])
-    setEmail("")
+    try {
+      const ctx = getVaultXContext()
+      if (!ctx.accessToken) throw new Error("Not logged in")
+
+      const { public_key_pem } = await api.get(`/auth/public-key/${trimmedEmail}`, ctx.accessToken)
+      const pubKey = await window.crypto.subtle.importKey(
+        "spki",
+        pemToArrayBuffer(public_key_pem),
+        { name: "RSA-OAEP", hash: "SHA-256" },
+        false,
+        ["encrypt"]
+      )
+
+      const fileKey_b64 = sessionStorage.getItem(`vaultx_kf_${file.id}`)
+      if (!fileKey_b64) throw new Error("Missing file encryption key (Kf)")
+
+      const fileKeyBytes = Uint8Array.from(atob(fileKey_b64), (c) => c.charCodeAt(0))
+
+      const wrappedKey = await window.crypto.subtle.encrypt(
+        { name: "RSA-OAEP" },
+        pubKey,
+        fileKeyBytes
+      )
+      const wrappedKey_b64 = btoa(String.fromCharCode(...new Uint8Array(wrappedKey)))
+
+      await api.post(
+        "/shares",
+        {
+          file_id: file.id,
+          recipient_email: trimmedEmail,
+          wrapped_key_b64: wrappedKey_b64,
+          permissions: "read",
+        },
+        ctx.accessToken
+      )
+
+      setSharedUsers((prev) => [...prev, trimmedEmail])
+      setEmail("")
+      alert(`File shared with ${trimmedEmail}`)
+    } catch (err: any) {
+      console.error("Share failed:", err)
+      alert(err.message || "Failed to share file.")
+    }
   }
 
-  const handleRemoveUser = (userEmail: string) => {
-    // TODO: Replace with real API call -> DELETE /files/{file_id}/share/{user_email}
-    setSharedUsers((prev) => prev.filter((email) => email !== userEmail))
+  const handleRemoveUser = async (userEmail: string) => {
+    const confirmRemove = confirm(`Are you sure you want to revoke sharing to ${userEmail}?`)
+    if (!confirmRemove) return
+
+    try {
+      const ctx = getVaultXContext()
+      if (!ctx.accessToken) throw new Error("Not logged in")
+
+      await api.post(
+        "/shares/revoke",
+        { file_id: file.id, recipient_email: userEmail },
+        ctx.accessToken
+      )
+
+      setSharedUsers((prev) => prev.filter((email) => email !== userEmail))
+      alert(`Access revoked for ${userEmail}`)
+    } catch (err: any) {
+      console.error("Revoke failed:", err)
+      alert(err.message || "Failed to revoke access.")
+    }
   }
 
-  if (!file) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -160,10 +228,7 @@ export function ShareModal({ open, onOpenChange, file }: ShareModalProps) {
 
         {/* Footer */}
         <div className="flex justify-end space-x-2 pt-4 border-t border-border">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={() => onOpenChange(false)}>Done</Button>
+          <Button onClick={() => window.location.reload()}>Done</Button>
         </div>
       </DialogContent>
     </Dialog>

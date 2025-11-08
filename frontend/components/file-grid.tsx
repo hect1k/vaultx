@@ -17,6 +17,8 @@ interface FileItem {
   modified: string;
   owner: string;
   shared: boolean;
+  shared_with?: string[];
+  is_shared_with_me?: boolean;
 }
 
 interface FileGridProps {
@@ -61,15 +63,26 @@ export function FileGrid({ files, onShareFile, onDownloadFile, onDeleteFile }: F
             </DropdownMenuTrigger>
 
             <DropdownMenuContent align="center" className="w-32">
-              <DropdownMenuItem onClick={() => onDownloadFile?.(file.id)}>Download</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onShareFile?.(file.id)}>Share</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => onDeleteFile?.(file.id)}
-                className="text-destructive focus:text-destructive"
-              >
-                Delete
+              <DropdownMenuItem onClick={() => onDownloadFile?.(file.id)}>
+                Download
               </DropdownMenuItem>
+
+              {!file.is_shared_with_me && (
+                <>
+                  <DropdownMenuItem onClick={() => onShareFile?.(file.id)}>
+                    Share
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem
+                    onClick={() => onDeleteFile?.(file.id)}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         ))}

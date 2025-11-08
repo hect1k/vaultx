@@ -6,7 +6,7 @@ import { decryptBytesWithAes, decryptStringWithAes } from "@/lib/crypto/aes";
 import { getVaultXContext, clearVaultXContext } from "@/lib/crypto/context";
 import { api } from "@/lib/api";
 import { bufToB64 } from "@/lib/crypto/base";
-import { RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { RefreshCw, RotateCcw } from "lucide-react";
 
 interface FileItem {
   id: string;
@@ -16,6 +16,8 @@ interface FileItem {
   size: string;
   modified: string;
   owner: string;
+  shared: boolean;
+  shared_with?: string[];
 }
 
 export function Trash() {
@@ -56,13 +58,11 @@ export function Trash() {
           name: meta.name || "Untitled",
           type: "file",
           fileType: meta.type || "unknown",
-          size: meta.size
-            ? meta.size < 1024 * 1024
-              ? `${(meta.size / 1024).toFixed(1)} KB`
-              : `${(meta.size / 1024 / 1024).toFixed(1)} MB`
-            : "—",
+          size: meta.size ? `${(meta.size / 1024).toFixed(2)} KB` : "—",
           modified: new Date(f.created_at).toLocaleString(),
           owner: f.owner_email || "You",
+          shared: (f.shared_with || []).length > 0,
+          shared_with: f.shared_with,
         });
       } catch (err) {
         console.warn("Failed to decrypt metadata for file:", f.id, err);
@@ -88,9 +88,9 @@ export function Trash() {
         return;
       }
 
-      // 👇 Replace later with `/files/trash`
-      const data = await api.get("/files", ctx.accessToken);
+      const data = await api.get("/files/deleted", ctx.accessToken);
       const decryptedFiles = await decryptFiles(data.files || []);
+      console.log("Decrypted files:", decryptedFiles);
       setFiles(decryptedFiles);
     } catch (err: any) {
       console.error("Error fetching trash:", err);
@@ -111,8 +111,6 @@ export function Trash() {
   const handleRestore = async (id: string) => {
     const file = files.find((f) => f.id === id);
     if (!file) return;
-    const confirmRestore = confirm(`♻️ Restore "${file.name}"?`);
-    if (!confirmRestore) return;
 
     try {
       const ctx = getVaultXContext();
@@ -124,40 +122,11 @@ export function Trash() {
       }
 
       await api.post(`/files/${id}/restore`, {}, ctx.accessToken);
-      alert(`✅ Restored "${file.name}" successfully.`);
+      alert(`Restored "${file.name}" successfully.`);
       setFiles((prev) => prev.filter((f) => f.id !== id));
     } catch (err) {
       console.error("Restore failed:", err);
       alert(`Failed to restore "${file.name}". Try again.`);
-    }
-  };
-
-  // ============================
-  // Permanently delete handler
-  // ============================
-  const handlePermanentDelete = async (id: string) => {
-    const file = files.find((f) => f.id === id);
-    if (!file) return;
-    const confirmDelete = confirm(
-      `⚠️ Permanently delete "${file.name}"? This cannot be undone.`
-    );
-    if (!confirmDelete) return;
-
-    try {
-      const ctx = getVaultXContext();
-      if (!ctx.accessToken) {
-        clearVaultXContext();
-        alert("Session expired — please log in again.");
-        window.location.href = "/";
-        return;
-      }
-
-      await api.delete(`/files/${id}`, ctx.accessToken);
-      alert(`🗑️ Permanently deleted "${file.name}".`);
-      setFiles((prev) => prev.filter((f) => f.id !== id));
-    } catch (err) {
-      console.error("Permanent delete failed:", err);
-      alert(`Failed to delete "${file.name}". Try again.`);
     }
   };
 
@@ -218,20 +187,10 @@ export function Trash() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleRestore(file.id)}
-                    className="text-green-600 hover:text-green-700 border-green-600 hover:bg-green-600/10"
+                    className="bg-green-500/50 dark:bg-green-500/25 hover:bg-green-500 dark:hover:bg-green-500/50"
                   >
                     <RotateCcw className="w-4 h-4 mr-1" />
                     Restore
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handlePermanentDelete(file.id)}
-                    className="text-destructive border-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="w-4 h-4 mr-1" />
-                    Delete
                   </Button>
                 </div>
               </div>
